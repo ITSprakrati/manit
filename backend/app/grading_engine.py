@@ -98,6 +98,29 @@ def grade_single_answer(
     uncovered_tokens = ["quantum", "genetic algorithm", "blockchain", "dna", "ancient", "uncovered"]
     has_uncovered_content = any(t in student_text.lower() for t in uncovered_tokens)
 
+    # Phase B: Check if question has teacher-accepted alternative method matching student text
+    has_teacher_approved_alternative = False
+    approved_alt_note = ""
+    if question.alternative_methods:
+        try:
+            alt_list = json.loads(question.alternative_methods)
+            s_clean = re.sub(r'\s+', '', student_text.lower())
+            s_tokens = set(re.findall(r'\b[a-zA-Z0-9_]+\b', student_text.lower()))
+            for m in alt_list:
+                m_text = m.get("method_text", "") if isinstance(m, dict) else str(m)
+                if not m_text:
+                    continue
+                m_clean = re.sub(r'\s+', '', m_text.lower())
+                m_tokens = set(re.findall(r'\b[a-zA-Z0-9_]+\b', m_text.lower()))
+                token_overlap = len(s_tokens.intersection(m_tokens)) / max(len(m_tokens), 1)
+                if m_clean in s_clean or s_clean in m_clean or token_overlap >= 0.50:
+                    has_teacher_approved_alternative = True
+                    approved_alt_note = m.get("note", "Teacher-approved alternative") if isinstance(m, dict) else "Teacher-approved alternative"
+                    has_uncovered_content = False  # Teacher approved it!
+                    break
+        except Exception:
+            pass
+
     # 4. Run 3 Grading Evaluations (Consistency Check)
     criteria = question.rubric_criteria
     if not criteria:
@@ -146,6 +169,14 @@ def grade_single_answer(
                 cited_page = None
                 cited_txt = None
                 covered = False
+            elif has_teacher_approved_alternative:
+                # Phase B: Student solution matches teacher-accepted alternative method
+                marks = round(crit.max_marks * 0.95, 1)
+                reason = f"Teacher-approved alternative: {approved_alt_note}"
+                cited_chunk = None
+                cited_page = None
+                cited_txt = None
+                covered = True
             else:
                 # Award mark anchored to course chunk or evaluated by AI
                 ratio = 0.90 if run_num == 1 else (0.88 if run_num == 2 else 0.92)
@@ -185,7 +216,10 @@ def grade_single_answer(
             "grades": run_grades
         })
 
-    # Save grade runs in DB
+    # Save grade runs in DB (clear old runs on re-grade)
+    db.query(GradeRun).filter(GradeRun.answer_id == answer.id).delete()
+    db.flush()
+
     saved_runs = []
     for rd in runs_data:
         gr = GradeRun(
@@ -219,10 +253,14 @@ def grade_single_answer(
     is_unstable = round(max_diff, 2) > round(grade_band, 2)
     confidence = "Low" if is_unstable else ("Medium" if round(max_diff, 2) > (round(grade_band, 2) * 0.5) else "High")
 
-    # 6. Check for unusual answer: low similarity to model answer AND to chunks
-    model_sim = compute_text_similarity(student_text, question.model_answer or "")
-    chunk_sim = compute_text_similarity(student_text, retrieved_chunks[0].get("chunk_text", "") if retrieved_chunks else "")
-    is_unusual = (model_sim < 0.15 and chunk_sim < 0.15 and len(student_text.split()) > 15)
+    # 6. Check for unusual answer: only evaluated when teacher provided a model answer
+    has_model_answer = bool(question.model_answer and question.model_answer.strip())
+    if has_model_answer:
+        model_sim = compute_text_similarity(student_text, question.model_answer)
+        chunk_sim = compute_text_similarity(student_text, retrieved_chunks[0].get("chunk_text", "") if retrieved_chunks else "")
+        is_unusual = (model_sim < 0.15 and chunk_sim < 0.15 and len(student_text.split()) > 15)
+    else:
+        is_unusual = False
 
     # 7. Check for criterion conflict
     # Check if criterion level sum matches run total
@@ -330,9 +368,10 @@ def grade_submission(submission_id: int, db: Session) -> Dict[str, Any]:
 
         # Rule 5: Unusual answer
         if res["is_unusual"]:
+            q_num = ans.question.question_number if ans.question else 1
             flags_to_add.append({
                 "type": "unusual_answer",
-                "reason": "Unusual answer (very low semantic similarity to model answer & lecture notes)",
+                "reason": f"Q{q_num}: Unusual answer (low similarity to model answer & lecture notes)",
                 "severity": "low",
                 "answer_id": ans.id
             })
@@ -382,6 +421,20 @@ def grade_submission(submission_id: int, db: Session) -> Dict[str, Any]:
                 resolved=False
             )
             db.add(flag_obj)
+    db.flush()
+
+    # Phase B: External AI Verifier for Math and Alternate Methods
+    # Runs ONLY in special trigger cases (math_numeric/mixed differing from notes, or flagged calculations)
+    # The verifier NEVER awards marks automatically and is NEVER shown as course citation.
+    try:
+        from backend.app.verifier import verify_answer
+        for ans in submission.answers:
+            ans_flags = [f["type"] for f in flags_to_add if f["answer_id"] == ans.id]
+            verify_answer(db, ans, ans.question, ans.student_answer_text, ans_flags, chunk_dicts)
+    except Exception as e:
+        logger.error(f"External verifier error on submission {submission.id}: {str(e)}")
+
+    db.flush()
 
     from backend.app.risk_scoring import compute_submission_risk_score
     risk_info = compute_submission_risk_score(submission, answer_results, db)

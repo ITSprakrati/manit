@@ -21,6 +21,10 @@ class OverrideMarkRequest(BaseModel):
     note: str  # Short note is required by spec
     accept_uncovered_as_valid: Optional[bool] = False
 
+class TeacherCorrectAnswerRequest(BaseModel):
+    corrected_text: str
+    note: Optional[str] = "Teacher fairness correction"
+
 class PublishResultRequest(BaseModel):
     student_feedback: Optional[str] = None
 
@@ -47,14 +51,22 @@ def get_assignment_submissions_review(
         Submission.is_planted_check == False
     ).all()
 
-    # Automatically auto-grade any submissions in 'submitted' status
+    # Automatically finalize expired correction windows
+    now_utc = datetime.utcnow()
+    for sub in submissions:
+        if not sub.window_locked and sub.correction_window_until and now_utc >= sub.correction_window_until:
+            sub.window_locked = True
+            db.commit()
+
+    # Automatically auto-grade any submissions in 'submitted' status whose correction window is closed
     from backend.app.llm_provider import is_ai_forced_offline
     from backend.app.grading_engine import grade_submission
     from backend.app.risk_scoring import compute_submission_risk_score
 
     if not is_ai_forced_offline():
         for sub in submissions:
-            if sub.status == "submitted":
+            can_grade = (sub.status == "submitted" and (sub.window_locked or not sub.correction_window_until or now_utc >= sub.correction_window_until))
+            if can_grade:
                 try:
                     grade_submission(sub.id, db)
                     db.refresh(sub)
@@ -97,6 +109,22 @@ def get_assignment_submissions_review(
             except Exception:
                 pass
 
+        ans_q_map = {a.id: (a.question.question_number if a.question else 1) for a in sub.answers}
+        flags_data = []
+        for f in sorted_flags:
+            q_num = ans_q_map.get(f.answer_id)
+            reason_text = f.reason
+            if q_num and not reason_text.startswith("Q"):
+                reason_text = f"Q{q_num}: {f.reason}"
+            flags_data.append({
+                "id": f.id,
+                "type": f.flag_type,
+                "reason": reason_text,
+                "severity": f.severity,
+                "answer_id": f.answer_id,
+                "question_number": q_num
+            })
+
         sub_summary = {
             "id": sub.id,
             "student_id": sub.student_id,
@@ -110,16 +138,14 @@ def get_assignment_submissions_review(
             "file_status": sub.file_status,
             "receipt_id": sub.submission_receipt,
             "created_at": sub.created_at.isoformat(),
-            "flags": [
-                {
-                    "id": f.id,
-                    "type": f.flag_type,
-                    "reason": f.reason,
-                    "severity": f.severity,
-                    "answer_id": f.answer_id
-                }
-                for f in sorted_flags
-            ],
+            "assignment_kind": assignment.kind or "assignment",
+            "student_comment": sub.student_comment,
+            "has_student_comment": bool(sub.student_comment),
+            "student_edited": any(a.student_edited for a in sub.answers),
+            "teacher_edited": any(a.teacher_edited for a in sub.answers),
+            "in_correction_window": bool(not sub.window_locked and sub.correction_window_until and now_utc < sub.correction_window_until),
+            "window_locked": sub.window_locked,
+            "flags": flags_data,
             "max_severity": max_severity,
             "has_injection": any(a.injection_detected for a in sub.answers),
             # Phase 1: Automation #2 Risk Score Fields (Teacher-only)
@@ -156,6 +182,7 @@ def get_assignment_submissions_review(
     return {
         "assignment_id": assignment.id,
         "assignment_title": assignment.title,
+        "assignment_kind": assignment.kind or "assignment",
         "counts": counts,
         "flagged_queue": flagged_list,
         "everything_else": everything_else_list
@@ -225,15 +252,49 @@ def get_submission_detail_review(
             Override.question_id == q.id
         ).all()
 
+        # Phase B: External verification data (Advisory-only)
+        ext_ver_data = None
+        if ans.external_verification:
+            ev = ans.external_verification
+            step_notes_list = []
+            if ev.step_notes:
+                try:
+                    step_notes_list = json.loads(ev.step_notes)
+                except Exception:
+                    step_notes_list = [ev.step_notes]
+            ext_ver_data = {
+                "id": ev.id,
+                "sympy_result": ev.sympy_result,
+                "sympy_details": ev.sympy_details,
+                "student_expr_parsed": ev.student_expr_parsed,
+                "model_expr_parsed": ev.model_expr_parsed,
+                "llm_verdict": ev.llm_verdict,
+                "first_incorrect_step": ev.first_incorrect_step,
+                "step_notes": step_notes_list,
+                "confidence": ev.confidence,
+                "is_alternate_method": ev.is_alternate_method,
+                "label": ev.label or "Checked outside course material",
+                "status": ev.status,
+                "created_at": ev.created_at.isoformat() if ev.created_at else None
+            }
+
         answers_detail.append({
             "answer_id": ans.id,
             "question_id": q.id,
             "question_number": q.question_number,
             "question_text": q.question_text,
+            "question_type": q.question_type or "text",
+            "model_answer": q.model_answer,
+            "alternative_methods": json.loads(q.alternative_methods) if q.alternative_methods else [],
+            "source_chunks_info": q.source_chunks_info,
             "max_marks": q.max_marks,
             "student_answer_text": ans.student_answer_text,
+            "original_answer_text": ans.original_answer_text or ans.student_answer_text,
+            "student_edited": ans.student_edited,
+            "teacher_edited": ans.teacher_edited,
             "injection_detected": ans.injection_detected,
             "injection_phrases": json.loads(ans.injection_phrases) if ans.injection_phrases else [],
+            "external_verification": ext_ver_data,
             "criteria_grades": criteria_grades,
             "overrides": [
                 {
@@ -252,6 +313,7 @@ def get_submission_detail_review(
         "submission_id": sub.id,
         "assignment_id": sub.assignment_id,
         "assignment_title": sub.assignment.title,
+        "assignment_kind": sub.assignment.kind if sub.assignment else "assignment",
         "student_id": sub.student_id,
         "student_name": sub.student.full_name,
         "student_email": sub.student.email,
@@ -264,6 +326,8 @@ def get_submission_detail_review(
         "original_filename": sub.original_filename,
         "receipt_id": sub.submission_receipt,
         "created_at": sub.created_at.isoformat(),
+        "student_comment": sub.student_comment,
+        "window_locked": sub.window_locked,
         "flags": [
             {
                 "id": f.id,
@@ -370,6 +434,61 @@ def override_mark(
         "criterion_id": req.rubric_criterion_id,
         "new_mark": req.new_mark,
         "note": req.note
+    }
+
+@router.post("/submissions/{submission_id}/answers/{answer_id}/teacher-correct")
+def teacher_correct_answer(
+    submission_id: int,
+    answer_id: int,
+    req: TeacherCorrectAnswerRequest,
+    teacher: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    """
+    Fairness safety net: Teacher can correct the extracted text or answer split in the review screen.
+    Keeps original extracted text snapshot, marks teacher_edited=True, logs in AuditLog,
+    and re-grades the submission with the corrected text.
+    """
+    sub = db.query(Submission).filter(Submission.id == submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    ans = db.query(Answer).filter(Answer.id == answer_id, Answer.submission_id == sub.id).first()
+    if not ans:
+        raise HTTPException(status_code=404, detail="Answer not found")
+
+    if ans.original_answer_text is None:
+        ans.original_answer_text = ans.student_answer_text
+
+    old_text = ans.student_answer_text
+    ans.student_answer_text = req.corrected_text.strip()
+    ans.teacher_edited = True
+
+    audit = AuditLog(
+        user_id=teacher.id,
+        event_type="TEACHER_TEXT_CORRECTED",
+        details=f"Teacher {teacher.email} corrected extracted text for submission {sub.id}, answer {ans.id}. Note: '{req.note}'. Old: '{old_text[:60]}...' -> New: '{ans.student_answer_text[:60]}...'"
+    )
+    db.add(audit)
+    db.commit()
+
+    # Re-grade this submission
+    from backend.app.llm_provider import is_ai_forced_offline
+    from backend.app.grading_engine import grade_submission
+    if not is_ai_forced_offline():
+        try:
+            grade_submission(sub.id, db)
+            db.refresh(sub)
+        except Exception as e:
+            pass
+
+    return {
+        "success": True,
+        "answer_id": ans.id,
+        "student_answer_text": ans.student_answer_text,
+        "original_answer_text": ans.original_answer_text,
+        "teacher_edited": True,
+        "message": "Extracted text corrected and answer re-graded successfully."
     }
 
 @router.post("/submissions/{submission_id}/approve")
@@ -1075,6 +1194,117 @@ def post_restore_rubric_version(
         return restore_rubric_version(version_id, teacher.id, db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class AcceptAlternativeMethodRequest(BaseModel):
+    method_text: str
+    note: Optional[str] = "Teacher-approved alternative solution"
+    submission_id: Optional[int] = None
+    award_marks: Optional[float] = None
+
+
+@router.post("/questions/{question_id}/accept-method")
+def accept_alternative_method(
+    question_id: int,
+    req: AcceptAlternativeMethodRequest,
+    teacher: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    """
+    Phase B: Teacher accepts a verified or valid alternative method.
+    Saves the method as a teacher-approved alternative solution on that question.
+    Optionally resolves the 'alternative_method' flag on the current submission and awards marks.
+    """
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    existing_methods = []
+    if question.alternative_methods:
+        try:
+            existing_methods = json.loads(question.alternative_methods)
+        except Exception:
+            existing_methods = []
+
+    new_entry = {
+        "method_text": req.method_text.strip(),
+        "note": req.note.strip() if req.note else "Teacher-approved alternative solution",
+        "approved_by_id": teacher.id,
+        "approved_at": datetime.utcnow().isoformat()
+    }
+    existing_methods.append(new_entry)
+    question.alternative_methods = json.dumps(existing_methods)
+
+    # If submission_id provided, resolve alternative_method flags on this submission
+    if req.submission_id:
+        sub = db.query(Submission).filter(Submission.id == req.submission_id).first()
+        if sub:
+            for f in sub.flags:
+                if f.flag_type == "alternative_method":
+                    f.resolved = True
+            db.flush()
+
+    audit = AuditLog(
+        user_id=teacher.id,
+        event_type="TEACHER_ACCEPTED_ALTERNATIVE_METHOD",
+        details=f"Teacher {teacher.email} approved alternative solution method for Question {question.question_number} (Assignment {question.assignment_id}): '{req.note}'"
+    )
+    db.add(audit)
+    db.commit()
+
+    return {
+        "success": True,
+        "question_id": question.id,
+        "alternative_methods": existing_methods,
+        "message": "Alternative method accepted and saved as teacher-approved solution."
+    }
+
+
+@router.post("/questions/{question_id}/regrade-unpublished")
+def regrade_unpublished_for_question(
+    question_id: int,
+    teacher: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    """
+    Phase B: Regrades ONLY unpublished submissions for this question.
+    Published results are NEVER changed automatically.
+    The grader now cites the accepted method as 'Teacher-approved alternative'.
+    """
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    assignment = question.assignment
+    submissions = db.query(Submission).filter(
+        Submission.assignment_id == assignment.id,
+        Submission.status != "published",
+        Submission.is_planted_check == False
+    ).all()
+
+    from backend.app.grading_engine import grade_submission
+    regraded_count = 0
+    for s in submissions:
+        try:
+            grade_submission(s.id, db)
+            regraded_count += 1
+        except Exception as e:
+            pass
+
+    audit = AuditLog(
+        user_id=teacher.id,
+        event_type="REGRADE_UNPUBLISHED_SUBMISSIONS",
+        details=f"Teacher {teacher.email} triggered regrade of {regraded_count} unpublished submissions for Question {question.question_number} using teacher-approved alternative solutions."
+    )
+    db.add(audit)
+    db.commit()
+
+    return {
+        "success": True,
+        "question_id": question.id,
+        "regraded_count": regraded_count,
+        "message": f"Successfully regraded {regraded_count} unpublished submissions for Question {question.question_number}."
+    }
 
 
 

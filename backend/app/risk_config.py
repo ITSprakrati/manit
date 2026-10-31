@@ -30,6 +30,9 @@ RISK_WEIGHTS = {
 
     # 8. Deadline Adherence: Submission was turned in past the deadline
     "LATE_SUBMISSION": 5.0,
+
+    # 9. Phase B: Alternative Method verification required
+    "ALTERNATIVE_METHOD": 25.0,
 }
 
 # Score Bands for Smart Triage

@@ -144,6 +144,17 @@ def compute_submission_risk_score(
             "reason": f"Late submission (+{int(RISK_WEIGHTS['LATE_SUBMISSION'])})"
         })
 
+    # 9. Phase B: Alternative Method Flag
+    has_alt_method = False
+    if hasattr(submission, "flags"):
+        has_alt_method = any(f.flag_type == "alternative_method" for f in submission.flags)
+    if has_alt_method:
+        breakdown.append({
+            "factor": "ALTERNATIVE_METHOD",
+            "points": RISK_WEIGHTS.get("ALTERNATIVE_METHOD", 25.0),
+            "reason": f"Alternative method: external verification (+{int(RISK_WEIGHTS.get('ALTERNATIVE_METHOD', 25.0))})"
+        })
+
     # Sum and clamp to 0-100
     raw_score = sum(item["points"] for item in breakdown)
     final_score = min(100.0, max(0.0, round(raw_score, 1)))

@@ -6,7 +6,8 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
   const { apiFetch } = useAuth();
   const { aiOnline } = useAIStatus();
 
-  const [title, setTitle] = useState(initialAssignment?.title || 'Assignment 1: Foundations of Machine Learning');
+  const [kind, setKind] = useState(initialAssignment?.kind || 'assignment');
+  const [title, setTitle] = useState(initialAssignment?.title || (initialAssignment?.kind === 'examination' ? 'Midterm Examination: CS101' : 'Assignment 1: Foundations of Machine Learning'));
   const [description, setDescription] = useState(initialAssignment?.description || '');
   const [deadline, setDeadline] = useState(
     initialAssignment?.deadline
@@ -160,6 +161,7 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
         question_number: questions.length + 1,
         question_text: 'New question description...',
         max_marks: 10.0,
+        question_type: 'text',
         model_answer: '',
         criteria: [],
         source_chunks_info: null,
@@ -249,6 +251,7 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
         deadline,
         late_policy: latePolicy,
         penalty_percent: parseFloat(penaltyPercent) || 0,
+        kind,
         questions: questions.map((q) => ({
           question_number: q.question_number,
           question_text: q.question_text,
@@ -294,6 +297,7 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
             deadline,
             late_policy: latePolicy,
             penalty_percent: parseFloat(penaltyPercent) || 0,
+            kind,
           }),
         });
         if (!pubRes.ok) {
@@ -322,6 +326,64 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      {/* Assessment Type Selector */}
+      <div style={{ marginBottom: '1.25rem' }}>
+        <label className="form-label" style={{ fontWeight: 600 }}>Assessment Type</label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.35rem' }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.75rem',
+            padding: '0.85rem 1rem',
+            borderRadius: '8px',
+            border: kind === 'assignment' ? '2px solid var(--primary)' : '1px solid var(--border)',
+            backgroundColor: kind === 'assignment' ? '#EFF6FF' : '#FFFFFF',
+            cursor: 'pointer',
+          }}>
+            <input
+              type="radio"
+              name="assessmentKind"
+              value="assignment"
+              checked={kind === 'assignment'}
+              onChange={() => setKind('assignment')}
+              style={{ marginTop: '0.2rem' }}
+            />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1E40AF' }}>📝 Assignment</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                Standard homework. Allows resubmissions + opens a 2-minute correction window after confirmation where students can edit OCR text or report issues. AI grading starts after the window locks.
+              </div>
+            </div>
+          </label>
+
+          <label style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.75rem',
+            padding: '0.85rem 1rem',
+            borderRadius: '8px',
+            border: kind === 'examination' ? '2px solid var(--primary)' : '1px solid var(--border)',
+            backgroundColor: kind === 'examination' ? '#EFF6FF' : '#FFFFFF',
+            cursor: 'pointer',
+          }}>
+            <input
+              type="radio"
+              name="assessmentKind"
+              value="examination"
+              checked={kind === 'examination'}
+              onChange={() => setKind('examination')}
+              style={{ marginTop: '0.2rem' }}
+            />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1E40AF' }}>🎓 Examination</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                High-stakes examination. Exactly 1 submission attempt allowed (no resubmissions). Students see a read-only preview of OCR text with no edits or comment box. Teachers retain a fairness safety net to correct OCR text on review.
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
 
       {/* Basic Info */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
@@ -487,6 +549,19 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    Type:
+                    <select
+                      className="form-control"
+                      style={{ padding: '0.2rem 0.4rem', fontSize: '0.8rem', height: 'auto', width: 'auto', borderRadius: '4px' }}
+                      value={q.question_type || 'text'}
+                      onChange={(e) => updateQuestion(qIdx, 'question_type', e.target.value)}
+                    >
+                      <option value="text">📝 Text</option>
+                      <option value="math_numeric">🔢 Math / Numeric</option>
+                      <option value="mixed">🔀 Mixed</option>
+                    </select>
+                  </label>
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     Max Marks:
                     <input

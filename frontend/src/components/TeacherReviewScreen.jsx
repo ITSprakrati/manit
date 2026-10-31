@@ -394,8 +394,13 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
           >
             ← Back to Assignment List
           </button>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)' }}>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             Review Submissions: {data?.assignment_title || 'Loading...'}
+            {data?.assignment_kind && (
+              <span className="badge" style={{ backgroundColor: data.assignment_kind === 'examination' ? '#EFF6FF' : '#F0FDF4', color: data.assignment_kind === 'examination' ? '#1E40AF' : '#166534', border: '1px solid ' + (data.assignment_kind === 'examination' ? '#BFDBFE' : '#BBF7D0'), fontSize: '0.85rem' }}>
+                {data.assignment_kind === 'examination' ? '🎓 Examination' : '📝 Assignment'}
+              </span>
+            )}
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
             Flagged-first review queue • Total submissions: {data?.counts?.total || 0}
@@ -705,15 +710,60 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
 
                       {/* Flag Reasons */}
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
-                        {sub.flags.map((f) => (
+                        {sub.student_comment && (
                           <span
-                            key={f.id}
-                            className={f.severity === 'high' ? 'badge-error' : 'badge-flagged'}
-                            style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}
+                            className="badge badge-flagged"
+                            style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#FFFBEB', color: '#92400E', borderColor: '#FCD34D' }}
                           >
-                            ⚠️ {f.reason}
+                            💬 OCR Issue: "{sub.student_comment}"
                           </span>
-                        ))}
+                        )}
+                        {sub.student_edited && (
+                          <span
+                            className="badge"
+                            style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}
+                          >
+                            ✏️ Student edited text
+                          </span>
+                        )}
+                        {sub.teacher_edited && (
+                          <span
+                            className="badge"
+                            style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}
+                          >
+                            ⚖️ Teacher corrected text
+                          </span>
+                        )}
+                        {sub.flags.map((f) => {
+                          if (f.type === 'alternative_method') {
+                            return (
+                              <span
+                                key={f.id}
+                                className="badge"
+                                style={{
+                                  padding: '0.2rem 0.5rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  backgroundColor: '#EEF2FF',
+                                  color: '#4338CA',
+                                  border: '1px solid #C7D2FE',
+                                }}
+                              >
+                                🔬 {f.reason}
+                              </span>
+                            );
+                          }
+                          return (
+                            <span
+                              key={f.id}
+                              className={f.severity === 'high' ? 'badge-error' : 'badge-flagged'}
+                              style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}
+                            >
+                              ⚠️ {f.reason}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -790,8 +840,17 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                               Confidence: {sub.confidence}
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                            Total: <strong>{sub.total_marks} pts</strong> • Receipt: {sub.receipt_id}
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span>Total: <strong>{sub.total_marks} pts</strong> • Receipt: {sub.receipt_id}</span>
+                            {sub.student_comment && (
+                              <span style={{ color: '#92400E', fontWeight: 600 }}>💬 OCR Issue: "{sub.student_comment}"</span>
+                            )}
+                            {sub.student_edited && (
+                              <span style={{ color: '#2563EB' }}>✏️ Student edited</span>
+                            )}
+                            {sub.teacher_edited && (
+                              <span style={{ color: '#7C3AED' }}>⚖️ Teacher corrected</span>
+                            )}
                           </div>
                         </div>
 

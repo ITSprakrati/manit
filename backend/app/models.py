@@ -88,6 +88,7 @@ class Assignment(Base):
     late_policy = Column(String(32), default="accept_penalty")  # 'block', 'accept_late', 'accept_penalty'
     penalty_percent = Column(Float, default=10.0)
     status = Column(String(32), default="draft")  # 'draft', 'published'
+    kind = Column(String(32), default="assignment", nullable=False)  # 'assignment' or 'examination'
     created_at = Column(DateTime, default=datetime.utcnow)
 
     course = relationship("Course", back_populates="assignments")
@@ -106,6 +107,9 @@ class Question(Base):
     model_answer = Column(Text, nullable=True)
     source_chunks_info = Column(Text, nullable=True)  # JSON summary of cited chunks / pages
     is_uncovered = Column(Boolean, default=False)
+    # Phase B: Question Type ('text', 'math_numeric', 'mixed') & Teacher-accepted alternative methods
+    question_type = Column(String(32), default="text", nullable=False)
+    alternative_methods = Column(Text, nullable=True)  # JSON list of teacher-approved alternative solutions
 
     assignment = relationship("Assignment", back_populates="questions")
     rubric_criteria = relationship("RubricCriterion", back_populates="question", cascade="all, delete-orphan", order_by="RubricCriterion.order_num")
@@ -149,6 +153,10 @@ class Submission(Base):
     planted_error_caught = Column(Boolean, nullable=True)  # None=pending, True=caught, False=missed
     is_spot_check = Column(Boolean, default=False, nullable=False)
     spot_check_status = Column(String(32), nullable=True)  # 'pending', 'confirmed', 'corrected'
+    # Phase A: 2-minute correction window
+    correction_window_until = Column(DateTime, nullable=True)
+    student_comment = Column(Text, nullable=True)
+    window_locked = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     student = relationship("User", back_populates="submissions")
@@ -165,12 +173,16 @@ class Answer(Base):
     submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=False)
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
     student_answer_text = Column(Text, nullable=False)
+    original_answer_text = Column(Text, nullable=True)  # original extracted text snapshot
+    student_edited = Column(Boolean, default=False, nullable=False)
+    teacher_edited = Column(Boolean, default=False, nullable=False)
     injection_detected = Column(Boolean, default=False)
     injection_phrases = Column(Text, nullable=True)  # JSON list of detected strings
 
     submission = relationship("Submission", back_populates="answers")
     question = relationship("Question", back_populates="answers")
     grade_runs = relationship("GradeRun", back_populates="answer", cascade="all, delete-orphan")
+    external_verification = relationship("ExternalVerification", back_populates="answer", uselist=False, cascade="all, delete-orphan")
 
 
 class GradeRun(Base):
@@ -202,6 +214,42 @@ class Grade(Base):
 
     grade_run = relationship("GradeRun", back_populates="grades")
     criterion = relationship("RubricCriterion")
+
+
+class ExternalVerification(Base):
+    """
+    Phase B: External AI Verifier for Math and Alternate Methods.
+    Stored separately from RAG grades. Strictly advisory-only.
+    """
+    __tablename__ = "external_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id"), nullable=False, unique=True)
+    submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+
+    # Step 1: Deterministic check with SymPy
+    sympy_result = Column(String(64), nullable=True)  # 'equivalent', 'different', 'parse_failed', 'no_model_expr', 'skipped'
+    sympy_details = Column(Text, nullable=True)
+    student_expr_parsed = Column(String(255), nullable=True)
+    model_expr_parsed = Column(String(255), nullable=True)
+
+    # Step 2: Second-opinion LLM check
+    llm_verdict = Column(String(32), nullable=False)  # 'valid', 'partially_valid', 'invalid', 'cannot_verify'
+    first_incorrect_step = Column(String(255), nullable=True)
+    step_notes = Column(Text, nullable=True)  # JSON list of strings
+    confidence = Column(Float, default=1.0)
+
+    # Advisory metadata
+    is_alternate_method = Column(Boolean, default=False)
+    label = Column(String(64), default="Checked outside course material", nullable=False)
+    status = Column(String(32), default="verified", nullable=False)  # 'verified', 'unavailable'
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    answer = relationship("Answer", back_populates="external_verification")
+    submission = relationship("Submission")
+    question = relationship("Question")
 
 
 class Flag(Base):

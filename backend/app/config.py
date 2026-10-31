@@ -20,3 +20,10 @@ TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tess
 
 # Demo toggle override for AI offline testing
 AI_OFFLINE_OVERRIDE = os.getenv("AI_OFFLINE_OVERRIDE", "false").lower() == "true"
+
+# Phase A: Correction window for Assignments (default: 120 seconds / 2 minutes)
+CORRECTION_WINDOW_SECONDS = int(os.getenv("CORRECTION_WINDOW_SECONDS", "120"))
+
+# Phase B: Verifier settings for Math and Alternate Methods
+VERIFIER_MODE = os.getenv("VERIFIER_MODE", "gemini").lower()
+VERIFIER_MODEL = os.getenv("VERIFIER_MODEL", "gemini-2.5-flash")
