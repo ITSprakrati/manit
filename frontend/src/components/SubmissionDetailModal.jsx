@@ -194,6 +194,15 @@ export const SubmissionDetailModal = ({ submissionId, onClose, onUpdated }) => {
               <span className="badge" style={{ backgroundColor: 'var(--panel-bg)', color: 'var(--primary)', border: '1px solid var(--border)' }}>
                 Confidence: {data.confidence}
               </span>
+              {data.risk_score !== undefined && (
+                <span
+                  className={`badge ${data.risk_band === 'High' ? 'badge-error' : data.risk_band === 'Medium' ? 'badge-flagged' : 'badge-approved'}`}
+                  style={{ fontWeight: 700 }}
+                  title="Computed Risk Score (0-100)"
+                >
+                  {data.risk_band === 'High' ? '🚨' : data.risk_band === 'Medium' ? '⚠️' : '✓'} Risk: {data.risk_score}/100 ({data.risk_band})
+                </span>
+              )}
               {data.is_late && (
                 <span className="badge badge-flagged">
                   Late ({data.late_penalty}% penalty)

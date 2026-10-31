@@ -14,6 +14,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'markanchor.db'
 SECRET_KEY = os.getenv("SECRET_KEY", "markanchor-super-secret-key-for-dev-demo-2026")
 LLM_MODE = os.getenv("LLM_MODE", "mock").lower()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 

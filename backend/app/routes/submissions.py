@@ -307,7 +307,8 @@ def get_my_submission(
     """
     submissions = db.query(Submission).filter(
         Submission.assignment_id == assignment_id,
-        Submission.student_id == student.id
+        Submission.student_id == student.id,
+        Submission.is_planted_check == False
     ).order_by(Submission.id.desc()).all()
 
     if not submissions:

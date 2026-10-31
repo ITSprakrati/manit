@@ -344,7 +344,9 @@ class GeminiLLMProvider(BaseLLMProvider):
                 parsed["model_answer"] = f"Model answer anchored to course lecture notes: addressing core principles of {question_text[:80]}."
             return True, parsed, raw
         except Exception as e:
-            return False, {}, str(e)
+            logger.warning(f"Gemini rubric suggestion error: {e}. Falling back to deterministic rubric builder.")
+            mock = MockLLMProvider()
+            return mock.suggest_rubric_and_model_answer(question_text, max_marks, retrieved_chunks)
 
     def split_student_answers(self, raw_text: str, questions: List[Dict[str, Any]]) -> Tuple[bool, List[Dict[str, Any]], str]:
         # Fall back to regex/heading parser for deterministic, fast splitting

@@ -148,7 +148,7 @@ def grade_single_answer(
                 covered = False
             else:
                 # Award mark anchored to course chunk or evaluated by AI
-                ratio = 0.90 if run_num == 1 else (0.85 if run_num == 2 else 0.95)
+                ratio = 0.90 if run_num == 1 else (0.88 if run_num == 2 else 0.92)
                 # If answer is very brief or poor
                 if len(student_text.split()) < 10:
                     ratio = 0.40
@@ -216,8 +216,8 @@ def grade_single_answer(
     totals = [r["total_marks"] for r in runs_data]
     max_diff = max(totals) - min(totals)
 
-    is_unstable = max_diff > grade_band
-    confidence = "Low" if is_unstable else ("Medium" if max_diff > (grade_band * 0.5) else "High")
+    is_unstable = round(max_diff, 2) > round(grade_band, 2)
+    confidence = "Low" if is_unstable else ("Medium" if round(max_diff, 2) > (round(grade_band, 2) * 0.5) else "High")
 
     # 6. Check for unusual answer: low similarity to model answer AND to chunks
     model_sim = compute_text_similarity(student_text, question.model_answer or "")
@@ -278,10 +278,12 @@ def grade_submission(submission_id: int, db: Session) -> Dict[str, Any]:
     total_marks_sum = 0.0
     overall_confidence = "High"
     flags_to_add = []
+    answer_results = []
 
     # Grade each question answer
     for ans in submission.answers:
         res = grade_single_answer(ans, ans.question, chunk_dicts, db)
+        answer_results.append(res)
         total_marks_sum += res["primary_run_total"]
 
         # Confidence aggregation: lowest confidence propagates
@@ -381,14 +383,28 @@ def grade_submission(submission_id: int, db: Session) -> Dict[str, Any]:
             )
             db.add(flag_obj)
 
+    from backend.app.risk_scoring import compute_submission_risk_score
+    risk_info = compute_submission_risk_score(submission, answer_results, db)
+    submission.risk_score = risk_info["score"]
+    submission.risk_band = risk_info["band"]
+    submission.risk_breakdown = json.dumps(risk_info["breakdown"])
+
     submission.confidence = overall_confidence
     submission.status = "graded"
+
+    # Audit log entry for automated risk scoring (Automation #2)
+    audit_risk = AuditLog(
+        user_id=None,
+        event_type="AUTO_RISK_SCORED",
+        details=f"Automation #2: Computed risk score {submission.risk_score}/100 ({submission.risk_band} Risk) for submission {submission.id}. Factors: {risk_info['top_reasons_summary']}"
+    )
+    db.add(audit_risk)
 
     # Audit log
     audit = AuditLog(
         user_id=None,
         event_type="AI_GRADING_RUN",
-        details=f"Completed 3-run grading for submission {submission.id} (Confidence: {overall_confidence}, Total: {total_marks_sum}, Flags added: {len(flags_to_add)})"
+        details=f"Completed 3-run grading for submission {submission.id} (Confidence: {overall_confidence}, Total: {total_marks_sum}, Risk: {submission.risk_score}, Flags added: {len(flags_to_add)})"
     )
     db.add(audit)
     db.commit()
@@ -399,5 +415,9 @@ def grade_submission(submission_id: int, db: Session) -> Dict[str, Any]:
         "status": submission.status,
         "confidence": submission.confidence,
         "total_marks": total_marks_sum,
-        "flags_count": len(flags_to_add)
+        "flags_count": len(flags_to_add),
+        "risk_score": submission.risk_score,
+        "risk_band": submission.risk_band,
+        "risk_breakdown": risk_info["breakdown"],
+        "top_reasons": risk_info["top_reasons_summary"]
     }

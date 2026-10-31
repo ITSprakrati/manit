@@ -139,6 +139,16 @@ class Submission(Base):
     raw_text = Column(Text, nullable=True)
     submission_receipt = Column(String(64), nullable=True)  # receipt id + timestamp
     confidence = Column(String(16), default="High")  # 'High', 'Medium', 'Low'
+    risk_score = Column(Float, default=0.0)  # 0 to 100
+    risk_band = Column(String(16), default="Low")  # 'High', 'Medium', 'Low'
+    risk_breakdown = Column(Text, nullable=True)  # JSON breakdown
+    # Phase 4: Automation #7 Spot-Checks and Planted Known-Check Items
+    is_planted_check = Column(Boolean, default=False, nullable=False)
+    planted_expected_mark = Column(Float, nullable=True)
+    planted_correct_mark = Column(Float, nullable=True)
+    planted_error_caught = Column(Boolean, nullable=True)  # None=pending, True=caught, False=missed
+    is_spot_check = Column(Boolean, default=False, nullable=False)
+    spot_check_status = Column(String(32), nullable=True)  # 'pending', 'confirmed', 'corrected'
     created_at = Column(DateTime, default=datetime.utcnow)
 
     student = relationship("User", back_populates="submissions")
@@ -223,6 +233,10 @@ class Override(Base):
     note = Column(Text, nullable=False)  # Short note required by spec
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    submission = relationship("Submission")
+    question = relationship("Question")
+    criterion = relationship("RubricCriterion")
+
 
 class PublishedResult(Base):
     __tablename__ = "published_results"
@@ -249,3 +263,59 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="audit_logs")
+
+
+class RubricSuggestion(Base):
+    __tablename__ = "rubric_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_id = Column(Integer, ForeignKey("assignments.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    rubric_criterion_id = Column(Integer, ForeignKey("rubric_criteria.id"), nullable=False)
+    pattern_type = Column(String(32), nullable=False)  # 'over_marked' or 'under_marked'
+    pattern_description = Column(String(255), nullable=False)
+    overrides_count = Column(Integer, default=0)
+    avg_mark_difference = Column(Float, default=0.0)
+    current_criterion_text = Column(Text, nullable=False)
+    suggested_criterion_text = Column(Text, nullable=False)
+    evidence_notes = Column(Text, nullable=True)  # JSON list of evidence
+    status = Column(String(32), default="pending")  # 'pending', 'accepted', 'rejected'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+    criterion = relationship("RubricCriterion")
+    question = relationship("Question")
+    assignment = relationship("Assignment")
+
+
+class RubricVersion(Base):
+    __tablename__ = "rubric_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rubric_criterion_id = Column(Integer, ForeignKey("rubric_criteria.id"), nullable=False)
+    version_number = Column(Integer, nullable=False)
+    criterion_text = Column(Text, nullable=False)
+    change_reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    criterion = relationship("RubricCriterion")
+
+
+class SpotCheckSession(Base):
+    __tablename__ = "spot_check_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_id = Column(Integer, ForeignKey("assignments.id"), nullable=False)
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    triggered_at = Column(DateTime, default=datetime.utcnow)
+    fast_approvals_count = Column(Integer, default=20)
+    avg_review_seconds = Column(Float, default=5.0)
+    status = Column(String(32), default="active")  # 'active', 'completed'
+    planted_checks_passed = Column(Integer, default=0)
+    planted_checks_missed = Column(Integer, default=0)
+    real_samples_confirmed = Column(Integer, default=0)
+    real_samples_corrected = Column(Integer, default=0)
+    reopened_approvals_count = Column(Integer, default=0)
+
+    assignment = relationship("Assignment")
+    teacher = relationship("User")
