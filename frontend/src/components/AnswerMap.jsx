@@ -138,15 +138,46 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         d3
           .forceLink(filteredGraph.edges)
           .id((d) => d.id)
-          .distance((d) => (d.edge_type === 'hub_connection' ? 85 : 125))
-          .strength((d) => (d.edge_type === 'hub_connection' ? 0.75 : 0.35))
+          .distance((d) => (d.edge_type === 'hub_connection' ? 180 : 220))
+          .strength((d) => (d.edge_type === 'hub_connection' ? 0.7 : 0.35))
       )
-      .force('charge', d3.forceManyBody().strength((d) => (d.node_type === 'hub' ? -420 : -160)))
-      .force('collide', d3.forceCollide().radius((d) => (d.radius || 14) + 14).iterations(3))
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.06))
-      .alphaDecay(0.03);
+      .force('charge', d3.forceManyBody().strength((d) => (d.node_type === 'hub' ? -950 : -420)))
+      .force('collide', d3.forceCollide().radius((d) => (d.node_type === 'hub' ? 45 : 32) + 20).iterations(3))
+      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05))
+      .alphaDecay(0.025);
 
     simulationRef.current = simulation;
+
+    // Auto-fit function to center and scale graph appropriately to viewport
+    const autoFitView = () => {
+      if (filteredGraph.nodes.length === 0) return;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      filteredGraph.nodes.forEach((n) => {
+        if (n.x === undefined || isNaN(n.x)) return;
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      });
+
+      if (minX === Infinity || maxX === -Infinity) return;
+
+      const spanX = Math.max(maxX - minX, 180);
+      const spanY = Math.max(maxY - minY, 180);
+      const cX = (minX + maxX) / 2;
+      const cY = (minY + maxY) / 2;
+
+      // Scale to comfortably occupy ~65-75% of the viewport
+      const scaleX = (width * 0.70) / (spanX + 120);
+      const scaleY = (height * 0.70) / (spanY + 120);
+      const optimalK = Math.min(2.0, Math.max(0.65, Math.min(scaleX, scaleY)));
+
+      transformRef.current = {
+        x: width / 2 - cX * optimalK,
+        y: height / 2 - cY * optimalK,
+        k: optimalK,
+      };
+    };
 
     // Helper to convert hex to rgba
     const hexToRgba = (hex, alpha) => {
@@ -164,10 +195,26 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
 
       // Pan & Zoom transform
       const { x, y, k } = transformRef.current;
+
+      // 0. Draw subtle architectural dot grid
+      ctx.save();
+      const gridSize = 32;
+      const startX = (x % (gridSize * k) + (gridSize * k)) % (gridSize * k);
+      const startY = (y % (gridSize * k) + (gridSize * k)) % (gridSize * k);
+      ctx.fillStyle = 'rgba(203, 213, 225, 0.45)';
+      for (let gx = startX - gridSize * k; gx < width + gridSize * k; gx += gridSize * k) {
+        for (let gy = startY - gridSize * k; gy < height + gridSize * k; gy += gridSize * k) {
+          ctx.beginPath();
+          ctx.arc(gx, gy, 1.25, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+
       ctx.translate(x, y);
       ctx.scale(k, k);
 
-      // 0. Draw Soft Pastel Cluster Enclosures / Hulls
+      // 1. Draw Soft Pastel Cluster Enclosures / Hulls
       const clusterMembers = {};
       filteredGraph.nodes.forEach((n) => {
         if (!n.x || !n.cluster_id || n.cluster_id === 'Singleton') return;
@@ -179,7 +226,6 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
 
       Object.entries(clusterMembers).forEach(([cId, members]) => {
         if (members.length < 2) return;
-        // Compute bounding circle / centroid
         const avgX = members.reduce((sum, m) => sum + m.x, 0) / members.length;
         const avgY = members.reduce((sum, m) => sum + m.y, 0) / members.length;
         let maxDist = 0;
@@ -187,28 +233,28 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
           const d = Math.sqrt((m.x - avgX) ** 2 + (m.y - avgY) ** 2);
           if (d > maxDist) maxDist = d;
         });
-        const hullRadius = maxDist + 35;
+        const hullRadius = maxDist + 52;
         const clusterColor = members[0].color || '#3B82F6';
 
         ctx.save();
         ctx.beginPath();
         ctx.arc(avgX, avgY, hullRadius, 0, 2 * Math.PI);
-        ctx.fillStyle = hexToRgba(clusterColor, 0.06);
+        ctx.fillStyle = hexToRgba(clusterColor, 0.08);
         ctx.fill();
-        ctx.strokeStyle = hexToRgba(clusterColor, 0.22);
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = hexToRgba(clusterColor, 0.28);
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 5]);
         ctx.stroke();
 
-        // Cluster subtle label on hull
-        ctx.fillStyle = hexToRgba(clusterColor, 0.55);
-        ctx.font = 'bold 10px sans-serif';
+        // Cluster badge title on hull
+        ctx.fillStyle = hexToRgba(clusterColor, 0.7);
+        ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(cId, avgX - hullRadius + 14, avgY - hullRadius + 16);
+        ctx.fillText(`Semantic Cluster: ${cId}`, avgX - hullRadius + 18, avgY - hullRadius + 22);
         ctx.restore();
       });
 
-      // 1. Draw Edges
+      // 2. Draw Edges
       filteredGraph.edges.forEach((edge) => {
         const s = edge.source;
         const t = edge.target;
@@ -220,35 +266,36 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         ctx.lineTo(t.x, t.y);
 
         if (edge.edge_type === 'hub_connection') {
-          ctx.strokeStyle = edge.color ? hexToRgba(edge.color, 0.4) : 'rgba(203, 213, 225, 0.6)';
-          ctx.lineWidth = 1.2;
-          ctx.setLineDash([3, 3]);
+          ctx.strokeStyle = edge.color ? hexToRgba(edge.color, 0.45) : 'rgba(203, 213, 225, 0.8)';
+          ctx.lineWidth = 1.6;
+          ctx.setLineDash([4, 4]);
         } else {
           // Similarity edge: thickness scales with similarity
-          ctx.strokeStyle = 'rgba(100, 116, 139, 0.35)';
-          ctx.lineWidth = edge.thickness || 1.8;
+          ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
+          ctx.lineWidth = Math.max(1.5, (edge.thickness || 2) * 1.2);
           ctx.setLineDash([]);
         }
         ctx.stroke();
         ctx.restore();
       });
 
-      // 2. Draw Nodes
+      // 3. Draw Nodes
       filteredGraph.nodes.forEach((node) => {
         if (!node.x) return;
-        const radius = node.radius || (node.node_type === 'hub' ? 24 : 15);
+        const isHub = node.node_type === 'hub';
+        const radius = isHub ? 38 : 26;
 
         ctx.save();
 
         // Amber Halo on Hub if Inconsistent
-        if (node.node_type === 'hub' && node.has_halo) {
+        if (isHub && node.has_halo) {
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + 11, 0, 2 * Math.PI);
+          ctx.arc(node.x, node.y, radius + 14, 0, 2 * Math.PI);
           ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
           ctx.fill();
 
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI);
+          ctx.arc(node.x, node.y, radius + 7, 0, 2 * Math.PI);
           ctx.fillStyle = 'rgba(245, 158, 11, 0.35)';
           ctx.fill();
         }
@@ -256,11 +303,11 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         // Outer Ring for Answer Nodes (Red = injection, Amber = flagged, Dashed = alt verification)
         if (node.ring_color) {
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + 4, 0, 2 * Math.PI);
+          ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI);
           ctx.strokeStyle = node.ring_color;
-          ctx.lineWidth = 2.8;
+          ctx.lineWidth = 3.2;
           if (node.ring_style === 'dashed') {
-            ctx.setLineDash([4, 3]);
+            ctx.setLineDash([5, 4]);
           } else {
             ctx.setLineDash([]);
           }
@@ -268,55 +315,53 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         }
 
         // Drop shadow for hub and answer nodes
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
-        ctx.shadowBlur = 6;
-        ctx.shadowOffsetY = 2;
+        ctx.shadowColor = 'rgba(15, 23, 42, 0.1)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetY = 3;
 
         // Node Circle Body
         ctx.beginPath();
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
-        ctx.fillStyle = node.node_type === 'hub' ? (node.color || '#0284C7') : '#FFFFFF';
+        ctx.fillStyle = isHub ? (node.color || '#0284C7') : '#FFFFFF';
         ctx.fill();
 
         ctx.shadowColor = 'transparent';
-        ctx.lineWidth = node.node_type === 'hub' ? 2.5 : 2.2;
+        ctx.lineWidth = isHub ? 3 : 2.5;
         ctx.strokeStyle = node.border_color || node.color || '#64748B';
         ctx.setLineDash([]);
         ctx.stroke();
 
         // Node Content / Labels
-        if (node.node_type === 'hub') {
+        if (isHub) {
           // Hub Label
           ctx.fillStyle = '#FFFFFF';
-          ctx.font = 'bold 9.5px sans-serif';
+          ctx.font = 'bold 12px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const hubShortName = (node.cluster_id || 'Group').replace('Group ', 'Grp ');
-          ctx.fillText(hubShortName, node.x, node.y - 5);
-          ctx.font = 'bold 8.5px sans-serif';
-          ctx.fillText(`(${node.count})`, node.x, node.y + 7);
+          const hubShortName = (node.cluster_id || 'Group');
+          ctx.fillText(hubShortName, node.x, node.y - 7);
+          ctx.font = 'bold 10px sans-serif';
+          ctx.fillText(`${node.count} answers`, node.x, node.y + 9);
         } else {
-          // Answer Node: Student initials or marks
+          // Answer Node: Student mark
           ctx.fillStyle = '#0F172A';
-          ctx.font = 'bold 9px sans-serif';
+          ctx.font = 'bold 11px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const markText = `${node.current_mark}p`;
+          const markText = `${node.current_mark} pts`;
           ctx.fillText(markText, node.x, node.y);
 
           // Student name badge below node
-          ctx.font = '8px sans-serif';
-          ctx.fillStyle = '#475569';
-          const sName = node.student_name ? node.student_name.split(' ')[0] : '';
-          if (sName) {
-            ctx.fillText(sName, node.x, node.y + radius + 10);
-          }
+          ctx.font = 'bold 9.5px sans-serif';
+          ctx.fillStyle = '#334155';
+          const sName = node.student_name ? node.student_name : `Student #${node.id}`;
+          ctx.fillText(sName, node.x, node.y + radius + 14);
 
           // Label Outlier members
           if (node.is_outlier && !node.is_singleton) {
-            ctx.font = 'bold 8px sans-serif';
+            ctx.font = 'bold 9px sans-serif';
             ctx.fillStyle = '#D97706';
-            ctx.fillText('⚡outlier', node.x, node.y + radius + 20);
+            ctx.fillText('⚡ outlier', node.x, node.y + radius + 26);
           }
         }
 
@@ -326,7 +371,14 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
       ctx.restore();
     };
 
-    simulation.on('tick', render);
+    let tickCount = 0;
+    simulation.on('tick', () => {
+      tickCount++;
+      if (tickCount === 25) {
+        autoFitView();
+      }
+      render();
+    });
 
     return () => {
       simulation.stop();
@@ -454,9 +506,38 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
   };
 
   const handleResetZoom = () => {
-    transformRef.current = { x: 0, y: 0, k: 1 };
+    const canvas = canvasRef.current;
+    if (canvas && filteredGraph.nodes.length > 0) {
+      const width = canvas.clientWidth || 900;
+      const height = canvas.clientHeight || 580;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      filteredGraph.nodes.forEach((n) => {
+        if (n.x === undefined || isNaN(n.x)) return;
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      });
+
+      if (minX !== Infinity && maxX !== -Infinity) {
+        const spanX = Math.max(maxX - minX, 180);
+        const spanY = Math.max(maxY - minY, 180);
+        const cX = (minX + maxX) / 2;
+        const cY = (minY + maxY) / 2;
+        const scaleX = (width * 0.70) / (spanX + 120);
+        const scaleY = (height * 0.70) / (spanY + 120);
+        const optimalK = Math.min(2.0, Math.max(0.65, Math.min(scaleX, scaleY)));
+        transformRef.current = {
+          x: width / 2 - cX * optimalK,
+          y: height / 2 - cY * optimalK,
+          k: optimalK,
+        };
+      }
+    } else {
+      transformRef.current = { x: 0, y: 0, k: 1 };
+    }
     if (simulationRef.current) {
-      simulationRef.current.alpha(0.3).restart();
+      simulationRef.current.alpha(0.2).restart();
     }
   };
 
@@ -606,7 +687,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
       </div>
 
       {/* GRAPH CANVAS & SIDE PANEL CONTAINER */}
-      <div style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden', minHeight: '620px', height: 'calc(100vh - 200px)' }}>
         {/* Main Canvas Area */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden', cursor: isDraggingRef.current ? 'grabbing' : 'grab' }}>
           {loading && (

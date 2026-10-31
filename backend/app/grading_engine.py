@@ -103,6 +103,74 @@ def compute_academic_relevance(student_text: str, question_text: str, model_answ
     return max(q_overlap, general_overlap)
 
 
+def cross_check_topic_with_ai(
+    student_text: str,
+    question_text: str,
+    model_answer: str
+) -> Tuple[bool, str, str]:
+    """
+    Second-opinion AI cross-check (Groq or Gemini) to verify if the student's text
+    is on-topic for the question, or if it is a completely unrelated document (e.g. 
+    college admission form, fee receipt, syllabus, or different subject).
+    Returns: (is_on_topic: bool, reason: str, checker_name: str)
+    """
+    if not student_text or len(student_text.strip().split()) < 3:
+        return False, "Answer text is empty or blank", "Validation"
+
+    # Step 1: Fast pattern check for administrative/college forms
+    is_admin_form, form_detail = is_unrelated_document_or_form(student_text)
+    if is_admin_form:
+        return False, f"Administrative form detected ({form_detail})", "FormScanner"
+
+    # Step 2: Second-opinion AI check using Groq or Gemini if AI is online
+    from backend.app.config import GROQ_API_KEY, GROQ_MODEL, GEMINI_API_KEY, GEMINI_MODEL
+    from backend.app.llm_provider import is_ai_forced_offline, GroqLLMProvider, GeminiLLMProvider, _clean_json_string
+
+    if not is_ai_forced_offline():
+        prompt = (
+            "You are a strict academic Topic & Relevance Evaluator.\n"
+            "Determine whether the student's submitted text is an attempt to answer the question, "
+            "or if it is a completely different document / topic (e.g. college admission form, syllabus, fee receipt, "
+            "administrative notice, or completely unrelated subject like history/voltage regulator vs machine learning).\n\n"
+            f"Question: {question_text}\n"
+            f"Reference Topic / Model Answer: {model_answer}\n\n"
+            f"Student's Submitted Text:\n{student_text[:1200]}\n\n"
+            "Return strict JSON with this exact schema:\n"
+            "{\"is_on_topic\": true/false, \"detected_document_type\": \"exam_answer\"|\"administrative_form\"|\"different_subject\"|\"gibberish\", \"confidence\": float, \"explanation\": \"short reason\"}"
+        )
+
+        # Priority 1: Groq fast inference if key is configured
+        if GROQ_API_KEY:
+            try:
+                groq_prov = GroqLLMProvider(GROQ_API_KEY, GROQ_MODEL)
+                raw = groq_prov._call(prompt, "You verify whether student answers are relevant to the exam question.", 0.1)
+                parsed = json.loads(_clean_json_string(raw))
+                is_on_topic = bool(parsed.get("is_on_topic", True))
+                explanation = parsed.get("explanation", parsed.get("detected_document_type", ""))
+                return is_on_topic, f"Groq ({GROQ_MODEL}): {explanation}", f"Groq-{GROQ_MODEL}"
+            except Exception as e:
+                logger.warning(f"Groq cross-check error: {e}. Falling back to Gemini.")
+
+        # Priority 2: Gemini
+        if GEMINI_API_KEY:
+            try:
+                gem_prov = GeminiLLMProvider(GEMINI_API_KEY)
+                raw = gem_prov._call(prompt, "You verify whether student answers are relevant to the exam question.", 0.1)
+                parsed = json.loads(_clean_json_string(raw))
+                is_on_topic = bool(parsed.get("is_on_topic", True))
+                explanation = parsed.get("explanation", parsed.get("detected_document_type", ""))
+                return is_on_topic, f"Gemini: {explanation}", "Gemini"
+            except Exception as e:
+                logger.warning(f"Gemini cross-check error: {e}. Falling back to lexical analysis.")
+
+    # Step 3: Deterministic fallback based on academic vocabulary relevance
+    academic_rel = compute_academic_relevance(student_text, question_text, model_answer, [])
+    if academic_rel < 0.08 and len(student_text.split()) >= 8:
+        return False, "Near-zero vocabulary overlap with question/model answer", "LexicalRelevance"
+
+    return True, "On-topic academic answer", "LexicalRelevance"
+
+
 def compute_text_similarity(text1: str, text2: str) -> float:
     """Computes Jaccard / token overlap similarity between two text snippets (0.0 to 1.0)."""
     t1 = set(re.findall(r'\b[a-zA-Z0-9_]+\b', text1.lower()))
@@ -162,16 +230,21 @@ def grade_single_answer(
     uncovered_tokens = ["quantum", "genetic algorithm", "blockchain", "dna", "ancient", "uncovered"]
     has_uncovered_content = any(t in student_text.lower() for t in uncovered_tokens)
 
-    # Detect administrative / college form or completely off-topic documents (e.g. college admission form for voltage regulator)
-    is_admin_form, form_detail = is_unrelated_document_or_form(student_text)
+    # Detect administrative / college form or completely off-topic documents with AI Cross-Check (Groq / Gemini)
+    is_on_topic, topic_reason, checker_name = cross_check_topic_with_ai(
+        student_text,
+        question.question_text,
+        question.model_answer or ""
+    )
+    is_off_topic = not is_on_topic
+    off_topic_reason = f"{checker_name}: {topic_reason}"
+
     academic_relevance = compute_academic_relevance(
         student_text,
         question.question_text,
         question.model_answer or "",
         retrieved_chunks
     )
-
-    is_off_topic = is_admin_form or (academic_relevance < 0.08 and len(student_text.split()) >= 8)
 
     # Phase B: Check if question has teacher-accepted alternative method matching student text
     has_teacher_approved_alternative = False
@@ -240,7 +313,7 @@ def grade_single_answer(
             if is_off_topic:
                 # Rule: Zero marks for off-topic documents, administrative college forms, or zero-relevance text
                 marks = 0.0
-                reason = f"Off-topic submission ({form_detail if is_admin_form else 'no relevance to subject matter'}). 0 marks awarded."
+                reason = f"Off-topic submission ({off_topic_reason}). 0 marks awarded."
                 cited_chunk = None
                 cited_page = None
                 cited_txt = None
@@ -376,7 +449,7 @@ def grade_single_answer(
         "has_injection": has_injection,
         "is_unusual": is_unusual,
         "is_off_topic": is_off_topic,
-        "off_topic_reason": form_detail or "Irrelevant/unrelated document submitted",
+        "off_topic_reason": off_topic_reason,
         "has_conflict": has_conflict,
         "primary_run_total": primary_run["total_marks"],
         "primary_grades": primary_run["grades"]
