@@ -30,5 +30,5 @@ VERIFIER_MODEL = os.getenv("VERIFIER_MODEL", "gemini-2.5-flash")
 
 # Groq & Cross-Checking LLM Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 CROSS_CHECK_LLM = os.getenv("CROSS_CHECK_LLM", "auto").lower()

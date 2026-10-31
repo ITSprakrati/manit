@@ -383,7 +383,7 @@ class OllamaLLMProvider(BaseLLMProvider):
 class GroqLLMProvider(BaseLLMProvider):
     def __init__(self, api_key: str = "", model: str = ""):
         self.api_key = api_key or GROQ_API_KEY
-        self.model = model or GROQ_MODEL or "llama-3.3-70b-versatile"
+        self.model = model or GROQ_MODEL or "openai/gpt-oss-120b"
 
     def check_health(self) -> Tuple[bool, str]:
         if is_ai_forced_offline():

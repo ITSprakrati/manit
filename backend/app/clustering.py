@@ -437,17 +437,16 @@ def generate_answer_map(
             "singletons_count": 0
         }
 
-    # Soft blue/slate palette for clusters (light theme)
+    # Beautiful Emerald & Mint Green palette for clusters (light theme with emerald accents)
     CLUSTER_COLORS = [
-        {"bg": "#E0F2FE", "border": "#0284C7", "hub": "#0284C7", "hub_text": "#FFFFFF"},  # Sky Blue
-        {"bg": "#F1F5F9", "border": "#475569", "hub": "#475569", "hub_text": "#FFFFFF"},  # Slate
-        {"bg": "#E0E7FF", "border": "#4F46E5", "hub": "#4F46E5", "hub_text": "#FFFFFF"},  # Indigo
-        {"bg": "#CCFBF1", "border": "#0D9488", "hub": "#0D9488", "hub_text": "#FFFFFF"},  # Teal
-        {"bg": "#EDE9FE", "border": "#7C3AED", "hub": "#7C3AED", "hub_text": "#FFFFFF"},  # Violet
-        {"bg": "#DCFCE7", "border": "#16A34A", "hub": "#16A34A", "hub_text": "#FFFFFF"},  # Emerald
-        {"bg": "#FEF3C7", "border": "#D97706", "hub": "#D97706", "hub_text": "#FFFFFF"},  # Amber/Bronze
+        {"bg": "#ECFDF5", "border": "#10B981", "hub": "#059669", "hub_text": "#FFFFFF", "accent": "#047857"},  # Emerald Green
+        {"bg": "#F0FDFA", "border": "#14B8A6", "hub": "#0D9488", "hub_text": "#FFFFFF", "accent": "#0F766E"},  # Teal Mint
+        {"bg": "#F0FDF4", "border": "#22C55E", "hub": "#16A34A", "hub_text": "#FFFFFF", "accent": "#15803D"},  # Forest Green
+        {"bg": "#ECFEFF", "border": "#06B6D4", "hub": "#0891B2", "hub_text": "#FFFFFF", "accent": "#0E7490"},  # Cyan Mint
+        {"bg": "#F7FEE7", "border": "#84CC16", "hub": "#4D7C0F", "hub_text": "#FFFFFF", "accent": "#3F6212"},  # Lime Jade
+        {"bg": "#FEF3C7", "border": "#D97706", "hub": "#D97706", "hub_text": "#FFFFFF", "accent": "#B45309"},  # Amber/Bronze
     ]
-    SINGLETON_COLOR = {"bg": "#F8FAFC", "border": "#94A3B8", "hub": "#94A3B8"}
+    SINGLETON_COLOR = {"bg": "#F8FAFC", "border": "#059669", "hub": "#059669", "accent": "#047857"}
 
     texts = [a.student_answer_text for a in answers]
     vectors = compute_dense_embeddings(texts)

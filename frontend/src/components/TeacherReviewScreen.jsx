@@ -696,8 +696,8 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
                           {sub.student_name}
                         </h3>
 
@@ -705,28 +705,28 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                         <button
                           type="button"
                           className={`badge ${sub.risk_band === 'High' ? 'badge-error' : sub.risk_band === 'Medium' ? 'badge-flagged' : 'badge-approved'}`}
-                          style={{ cursor: 'pointer', border: 'none', padding: '0.25rem 0.6rem', fontSize: '0.8rem', fontWeight: 700 }}
+                          style={{ cursor: 'pointer', border: 'none', padding: '0.35rem 0.75rem', fontSize: '0.875rem', fontWeight: 700, borderRadius: '6px' }}
                           onClick={() => setSelectedRiskBreakdown(sub)}
                           title="Click to view full weighted risk score breakdown"
                         >
                           {sub.risk_band === 'High' ? '🚨' : sub.risk_band === 'Medium' ? '⚠️' : '✓'} Risk: {sub.risk_score}/100 ({sub.risk_band})
                         </button>
 
-                        <span className="badge" style={{ backgroundColor: 'var(--panel-bg)', color: 'var(--primary)', border: '1px solid var(--border)' }}>
+                        <span className="badge" style={{ backgroundColor: 'var(--panel-bg)', color: 'var(--primary)', border: '1px solid var(--border)', fontSize: '0.85rem', padding: '0.35rem 0.75rem' }}>
                           Confidence: {sub.confidence}
                         </span>
-                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                        <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginLeft: '0.25rem' }}>
                           Current Total: {sub.total_marks} pts
                         </span>
                       </div>
 
                       {/* Automation #2: Top "Why" Plain-Language Reasons */}
                       {sub.risk_top_reasons && (
-                        <div style={{ fontSize: '0.825rem', color: '#B45309', fontWeight: 600, marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: '0.925rem', color: '#B45309', fontWeight: 600, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                           <span>🔍 <strong>Why this needs attention:</strong> {sub.risk_top_reasons}</span>
                           <button
                             type="button"
-                            style={{ background: 'none', border: 'none', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.775rem', padding: 0 }}
+                            style={{ background: 'none', border: 'none', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem', padding: 0 }}
                             onClick={() => setSelectedRiskBreakdown(sub)}
                           >
                             (view breakdown)
@@ -735,11 +735,11 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                       )}
 
                       {/* Flag Reasons */}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
                         {sub.student_comment && (
                           <span
                             className="badge badge-flagged"
-                            style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#FFFBEB', color: '#92400E', borderColor: '#FCD34D' }}
+                            style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, backgroundColor: '#FFFBEB', color: '#92400E', borderColor: '#FCD34D' }}
                           >
                             💬 OCR Issue: "{sub.student_comment}"
                           </span>
@@ -747,7 +747,7 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                         {sub.student_edited && (
                           <span
                             className="badge"
-                            style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}
+                            style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.85rem', backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}
                           >
                             ✏️ Student edited text
                           </span>
@@ -755,7 +755,7 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                         {sub.teacher_edited && (
                           <span
                             className="badge"
-                            style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}
+                            style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.85rem', backgroundColor: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}
                           >
                             ⚖️ Teacher corrected text
                           </span>
@@ -764,37 +764,41 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                           // Group flags cleanly to avoid repeating identical warning boxes
                           const map = new Map();
                           (sub.flags || []).forEach((f) => {
-                            const cleanReason = f.reason.replace(/^Q\d+:\s*/, '');
-                            const key = `${f.type}_${f.severity}_${cleanReason}`;
+                            const reasonRaw = (f.reason || '').trim();
+                            const qMatch = reasonRaw.match(/^(?:Q|Question\s*)(\d+)[:\-]?\s*/i);
+                            const cleanReason = reasonRaw.replace(/^(?:Q|Question\s*)\d+[:\-]?\s*/i, '').trim();
+                            const normKey = (cleanReason || reasonRaw).toLowerCase();
+                            const type = f.type || f.flag_type || 'uncovered_point';
+                            const key = `${type}_${f.severity}_${normKey}`;
                             if (!map.has(key)) {
-                              map.set(key, { ...f, cleanReason, count: 1, qNums: [] });
+                              map.set(key, { ...f, cleanReason: cleanReason || reasonRaw, count: 1, qNums: qMatch ? [`Q${qMatch[1]}`] : [] });
                             } else {
-                              map.get(key).count += 1;
-                            }
-                            const qMatch = f.reason.match(/^Q(\d+):/);
-                            if (qMatch) {
-                              map.get(key).qNums.push(`Q${qMatch[1]}`);
+                              const entry = map.get(key);
+                              entry.count += 1;
+                              if (qMatch && !entry.qNums.includes(`Q${qMatch[1]}`)) {
+                                entry.qNums.push(`Q${qMatch[1]}`);
+                              }
                             }
                           });
 
                           return Array.from(map.values()).map((gf, idx) => {
-                            const qLabel = gf.qNums.length > 0 ? ` (${gf.qNums.join(', ')})` : (gf.count > 1 ? ` (${gf.count}×)` : '');
+                            const qStr = gf.qNums.length > 0 ? ` [${gf.qNums.join(', ')}]` : (gf.count > 1 ? ` (${gf.count}×)` : '');
                             if (gf.type === 'alternative_method') {
                               return (
                                 <span
                                   key={idx}
                                   className="badge"
                                   style={{
-                                    padding: '0.2rem 0.5rem',
-                                    borderRadius: '4px',
-                                    fontSize: '0.75rem',
+                                    padding: '0.35rem 0.75rem',
+                                    borderRadius: '6px',
+                                    fontSize: '0.85rem',
                                     fontWeight: 600,
                                     backgroundColor: '#EEF2FF',
                                     color: '#4338CA',
                                     border: '1px solid #C7D2FE',
                                   }}
                                 >
-                                  🔬 {gf.cleanReason}{qLabel}
+                                  🔬 {gf.cleanReason}{qStr}
                                 </span>
                               );
                             }
@@ -802,9 +806,9 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                               <span
                                 key={idx}
                                 className={gf.severity === 'high' ? 'badge-error' : 'badge-flagged'}
-                                style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}
+                                style={{ padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600 }}
                               >
-                                ⚠️ {gf.cleanReason}{qLabel}
+                                ⚠️ {gf.cleanReason}{qStr}
                               </span>
                             );
                           });
@@ -815,7 +819,8 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                     <div>
                       <button
                         type="button"
-                        className="btn btn-primary btn-sm"
+                        className="btn btn-primary"
+                        style={{ padding: '0.65rem 1.3rem', fontSize: '0.95rem', fontWeight: 700 }}
                         onClick={() => setSelectedSubId(sub.id)}
                       >
                         Review Submission →

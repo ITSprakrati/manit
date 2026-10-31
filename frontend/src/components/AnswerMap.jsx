@@ -138,17 +138,17 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         d3
           .forceLink(filteredGraph.edges)
           .id((d) => d.id)
-          .distance((d) => (d.edge_type === 'hub_connection' ? 180 : 220))
-          .strength((d) => (d.edge_type === 'hub_connection' ? 0.7 : 0.35))
+          .distance((d) => (d.edge_type === 'hub_connection' ? 240 : 300))
+          .strength((d) => (d.edge_type === 'hub_connection' ? 0.75 : 0.4))
       )
-      .force('charge', d3.forceManyBody().strength((d) => (d.node_type === 'hub' ? -950 : -420)))
-      .force('collide', d3.forceCollide().radius((d) => (d.node_type === 'hub' ? 45 : 32) + 20).iterations(3))
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05))
-      .alphaDecay(0.025);
+      .force('charge', d3.forceManyBody().strength((d) => (d.node_type === 'hub' ? -1800 : -850)))
+      .force('collide', d3.forceCollide().radius((d) => (d.node_type === 'hub' ? 62 : 48) + 25).iterations(3))
+      .force('center', d3.forceCenter(width / 2, height / 2).strength(0.06))
+      .alphaDecay(0.02);
 
     simulationRef.current = simulation;
 
-    // Auto-fit function to center and scale graph appropriately to viewport
+    // Auto-fit function to center and scale graph generously to viewport
     const autoFitView = () => {
       if (filteredGraph.nodes.length === 0) return;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -162,15 +162,16 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
 
       if (minX === Infinity || maxX === -Infinity) return;
 
-      const spanX = Math.max(maxX - minX, 180);
-      const spanY = Math.max(maxY - minY, 180);
+      const spanX = Math.max(maxX - minX, 100);
+      const spanY = Math.max(maxY - minY, 100);
       const cX = (minX + maxX) / 2;
       const cY = (minY + maxY) / 2;
 
-      // Scale to comfortably occupy ~65-75% of the viewport
-      const scaleX = (width * 0.70) / (spanX + 120);
-      const scaleY = (height * 0.70) / (spanY + 120);
-      const optimalK = Math.min(2.0, Math.max(0.65, Math.min(scaleX, scaleY)));
+      // Generously scale to fill ~75-85% of viewport
+      const padding = 120;
+      const scaleX = (width - padding) / (spanX + 110);
+      const scaleY = (height - padding) / (spanY + 110);
+      const optimalK = Math.min(2.4, Math.max(0.85, Math.min(scaleX, scaleY)));
 
       transformRef.current = {
         x: width / 2 - cX * optimalK,
@@ -181,7 +182,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
 
     // Helper to convert hex to rgba
     const hexToRgba = (hex, alpha) => {
-      if (!hex || hex[0] !== '#') return `rgba(148, 163, 184, ${alpha})`;
+      if (!hex || hex[0] !== '#') return `rgba(16, 185, 129, ${alpha})`;
       const r = parseInt(hex.slice(1, 3), 16) || 0;
       const g = parseInt(hex.slice(3, 5), 16) || 0;
       const b = parseInt(hex.slice(5, 7), 16) || 0;
@@ -196,16 +197,16 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
       // Pan & Zoom transform
       const { x, y, k } = transformRef.current;
 
-      // 0. Draw subtle architectural dot grid
+      // 0. Draw subtle emerald architectural dot grid
       ctx.save();
-      const gridSize = 32;
+      const gridSize = 36;
       const startX = (x % (gridSize * k) + (gridSize * k)) % (gridSize * k);
       const startY = (y % (gridSize * k) + (gridSize * k)) % (gridSize * k);
-      ctx.fillStyle = 'rgba(203, 213, 225, 0.45)';
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.22)';
       for (let gx = startX - gridSize * k; gx < width + gridSize * k; gx += gridSize * k) {
         for (let gy = startY - gridSize * k; gy < height + gridSize * k; gy += gridSize * k) {
           ctx.beginPath();
-          ctx.arc(gx, gy, 1.25, 0, 2 * Math.PI);
+          ctx.arc(gx, gy, 1.4, 0, 2 * Math.PI);
           ctx.fill();
         }
       }
@@ -214,7 +215,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
       ctx.translate(x, y);
       ctx.scale(k, k);
 
-      // 1. Draw Soft Pastel Cluster Enclosures / Hulls
+      // 1. Draw Emerald Cluster Enclosures / Hulls
       const clusterMembers = {};
       filteredGraph.nodes.forEach((n) => {
         if (!n.x || !n.cluster_id || n.cluster_id === 'Singleton') return;
@@ -233,24 +234,38 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
           const d = Math.sqrt((m.x - avgX) ** 2 + (m.y - avgY) ** 2);
           if (d > maxDist) maxDist = d;
         });
-        const hullRadius = maxDist + 52;
-        const clusterColor = members[0].color || '#3B82F6';
+        const hullRadius = maxDist + 64;
+        const clusterColor = members[0].border_color || '#10B981';
 
         ctx.save();
         ctx.beginPath();
         ctx.arc(avgX, avgY, hullRadius, 0, 2 * Math.PI);
         ctx.fillStyle = hexToRgba(clusterColor, 0.08);
         ctx.fill();
-        ctx.strokeStyle = hexToRgba(clusterColor, 0.28);
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = hexToRgba(clusterColor, 0.35);
+        ctx.lineWidth = 2.0;
+        ctx.setLineDash([6, 6]);
         ctx.stroke();
 
-        // Cluster badge title on hull
-        ctx.fillStyle = hexToRgba(clusterColor, 0.7);
-        ctx.font = 'bold 11px sans-serif';
+        // Cluster badge pill on hull
+        const badgeText = `🌿 Cluster ${cId} • ${members.length} answers`;
+        ctx.font = 'bold 12px sans-serif';
+        const textWidth = ctx.measureText(badgeText).width;
+        const badgeX = avgX - hullRadius + 16;
+        const badgeY = avgY - hullRadius + 14;
+
+        ctx.fillStyle = 'rgba(236, 253, 245, 0.95)';
+        ctx.strokeStyle = '#6EE7B7';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(badgeX, badgeY, textWidth + 16, 24, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#065F46';
         ctx.textAlign = 'left';
-        ctx.fillText(`Semantic Cluster: ${cId}`, avgX - hullRadius + 18, avgY - hullRadius + 22);
+        ctx.textBaseline = 'middle';
+        ctx.fillText(badgeText, badgeX + 8, badgeY + 12);
         ctx.restore();
       });
 
@@ -266,48 +281,48 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         ctx.lineTo(t.x, t.y);
 
         if (edge.edge_type === 'hub_connection') {
-          ctx.strokeStyle = edge.color ? hexToRgba(edge.color, 0.45) : 'rgba(203, 213, 225, 0.8)';
-          ctx.lineWidth = 1.6;
-          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = 'rgba(16, 185, 129, 0.55)';
+          ctx.lineWidth = 2.2;
+          ctx.setLineDash([5, 5]);
         } else {
           // Similarity edge: thickness scales with similarity
-          ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
-          ctx.lineWidth = Math.max(1.5, (edge.thickness || 2) * 1.2);
+          ctx.strokeStyle = 'rgba(5, 150, 105, 0.7)';
+          ctx.lineWidth = Math.max(2.2, (edge.thickness || 2) * 1.5);
           ctx.setLineDash([]);
         }
         ctx.stroke();
         ctx.restore();
       });
 
-      // 3. Draw Nodes
+      // 3. Draw Nodes (Prominent, High-Contrast & Beautiful in Green/Emerald)
       filteredGraph.nodes.forEach((node) => {
         if (!node.x) return;
         const isHub = node.node_type === 'hub';
-        const radius = isHub ? 38 : 26;
+        const radius = isHub ? 48 : 34;
 
         ctx.save();
 
         // Amber Halo on Hub if Inconsistent
         if (isHub && node.has_halo) {
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + 14, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
+          ctx.arc(node.x, node.y, radius + 18, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.20)';
           ctx.fill();
 
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + 7, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.35)';
+          ctx.arc(node.x, node.y, radius + 9, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.38)';
           ctx.fill();
         }
 
         // Outer Ring for Answer Nodes (Red = injection, Amber = flagged, Dashed = alt verification)
         if (node.ring_color) {
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI);
+          ctx.arc(node.x, node.y, radius + 6, 0, 2 * Math.PI);
           ctx.strokeStyle = node.ring_color;
-          ctx.lineWidth = 3.2;
+          ctx.lineWidth = 3.8;
           if (node.ring_style === 'dashed') {
-            ctx.setLineDash([5, 4]);
+            ctx.setLineDash([6, 5]);
           } else {
             ctx.setLineDash([]);
           }
@@ -315,19 +330,29 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         }
 
         // Drop shadow for hub and answer nodes
-        ctx.shadowColor = 'rgba(15, 23, 42, 0.1)';
-        ctx.shadowBlur = 8;
-        ctx.shadowOffsetY = 3;
+        ctx.shadowColor = isHub ? 'rgba(5, 150, 105, 0.45)' : 'rgba(16, 185, 129, 0.25)';
+        ctx.shadowBlur = isHub ? 14 : 10;
+        ctx.shadowOffsetY = 4;
 
         // Node Circle Body
         ctx.beginPath();
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
-        ctx.fillStyle = isHub ? (node.color || '#0284C7') : '#FFFFFF';
+
+        if (isHub) {
+          // Rich Emerald Radial Gradient for Hub
+          const grad = ctx.createLinearGradient(node.x - radius, node.y - radius, node.x + radius, node.y + radius);
+          grad.addColorStop(0, '#10B981');
+          grad.addColorStop(1, '#047857');
+          ctx.fillStyle = grad;
+        } else {
+          // Crisp White Card for Answer Node
+          ctx.fillStyle = '#FFFFFF';
+        }
         ctx.fill();
 
         ctx.shadowColor = 'transparent';
-        ctx.lineWidth = isHub ? 3 : 2.5;
-        ctx.strokeStyle = node.border_color || node.color || '#64748B';
+        ctx.lineWidth = isHub ? 3.5 : 3.2;
+        ctx.strokeStyle = isHub ? '#064E3B' : (node.border_color || '#10B981');
         ctx.setLineDash([]);
         ctx.stroke();
 
@@ -335,33 +360,50 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         if (isHub) {
           // Hub Label
           ctx.fillStyle = '#FFFFFF';
-          ctx.font = 'bold 12px sans-serif';
+          ctx.font = 'bold 15px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           const hubShortName = (node.cluster_id || 'Group');
-          ctx.fillText(hubShortName, node.x, node.y - 7);
-          ctx.font = 'bold 10px sans-serif';
-          ctx.fillText(`${node.count} answers`, node.x, node.y + 9);
+          ctx.fillText(hubShortName, node.x, node.y - 8);
+          ctx.font = 'bold 11.5px sans-serif';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+          ctx.fillText(`${node.count} answers`, node.x, node.y + 11);
         } else {
-          // Answer Node: Student mark
-          ctx.fillStyle = '#0F172A';
-          ctx.font = 'bold 11px sans-serif';
+          // Answer Node: Student mark inside circle
+          ctx.fillStyle = '#064E3B';
+          ctx.font = 'bold 14px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           const markText = `${node.current_mark} pts`;
           ctx.fillText(markText, node.x, node.y);
 
-          // Student name badge below node
-          ctx.font = 'bold 9.5px sans-serif';
-          ctx.fillStyle = '#334155';
+          // Student name badge pill below node
           const sName = node.student_name ? node.student_name : `Student #${node.id}`;
-          ctx.fillText(sName, node.x, node.y + radius + 14);
+          ctx.font = 'bold 11px sans-serif';
+          const nameWidth = ctx.measureText(sName).width;
+          const pillW = nameWidth + 16;
+          const pillH = 22;
+          const pillX = node.x - pillW / 2;
+          const pillY = node.y + radius + 10;
+
+          ctx.fillStyle = 'rgba(236, 253, 245, 0.95)';
+          ctx.strokeStyle = '#A7F3D0';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(pillX, pillY, pillW, pillH, 5);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#065F46';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(sName, node.x, pillY + pillH / 2);
 
           // Label Outlier members
           if (node.is_outlier && !node.is_singleton) {
-            ctx.font = 'bold 9px sans-serif';
+            ctx.font = 'bold 10px sans-serif';
             ctx.fillStyle = '#D97706';
-            ctx.fillText('⚡ outlier', node.x, node.y + radius + 26);
+            ctx.fillText('⚡ outlier', node.x, pillY + pillH + 14);
           }
         }
 
@@ -374,7 +416,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
     let tickCount = 0;
     simulation.on('tick', () => {
       tickCount++;
-      if (tickCount === 25) {
+      if (tickCount === 5 || tickCount === 25 || tickCount === 50) {
         autoFitView();
       }
       render();
@@ -397,7 +439,8 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
       const dx = graphX - node.x;
       const dy = graphY - node.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist <= (node.radius || 12) + 4) {
+      const hitRadius = (node.node_type === 'hub' ? 48 : 34) + 6;
+      if (dist <= hitRadius) {
         return node;
       }
     }
@@ -520,13 +563,14 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
       });
 
       if (minX !== Infinity && maxX !== -Infinity) {
-        const spanX = Math.max(maxX - minX, 180);
-        const spanY = Math.max(maxY - minY, 180);
+        const spanX = Math.max(maxX - minX, 100);
+        const spanY = Math.max(maxY - minY, 100);
         const cX = (minX + maxX) / 2;
         const cY = (minY + maxY) / 2;
-        const scaleX = (width * 0.70) / (spanX + 120);
-        const scaleY = (height * 0.70) / (spanY + 120);
-        const optimalK = Math.min(2.0, Math.max(0.65, Math.min(scaleX, scaleY)));
+        const padding = 120;
+        const scaleX = (width - padding) / (spanX + 110);
+        const scaleY = (height - padding) / (spanY + 110);
+        const optimalK = Math.min(2.4, Math.max(0.85, Math.min(scaleX, scaleY)));
         transformRef.current = {
           x: width / 2 - cX * optimalK,
           y: height / 2 - cY * optimalK,
@@ -534,7 +578,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
         };
       }
     } else {
-      transformRef.current = { x: 0, y: 0, k: 1 };
+      transformRef.current = { x: 0, y: 0, k: 1.2 };
     }
     if (simulationRef.current) {
       simulationRef.current.alpha(0.2).restart();
@@ -609,7 +653,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
           <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>Question:</span>
           <select
             className="form-control"
-            style={{ width: 'auto', fontWeight: 600, fontSize: '0.85rem', padding: '0.35rem 0.75rem' }}
+            style={{ width: 'auto', fontWeight: 600, fontSize: '0.95rem', padding: '0.45rem 0.85rem' }}
             value={selectedQuestionId || ''}
             onChange={(e) => setSelectedQuestionId(Number(e.target.value))}
           >
@@ -620,15 +664,15 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
             ))}
           </select>
           {data && (
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)' }}>
               ({data.total_answers} answers • {data.clusters?.length || 0} groups • {data.singletons_count || 0} singletons)
             </span>
           )}
         </div>
 
         {/* Live Threshold Slider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: '0.925rem', fontWeight: 600, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <span>Similarity Threshold:</span>
             <input
               type="range"
@@ -643,10 +687,12 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
               style={{
                 fontFamily: 'monospace',
                 fontWeight: 700,
-                color: 'var(--primary)',
-                backgroundColor: '#EFF6FF',
-                padding: '0.15rem 0.45rem',
-                borderRadius: '4px',
+                color: '#065F46',
+                backgroundColor: '#ECFDF5',
+                border: '1px solid #A7F3D0',
+                padding: '0.2rem 0.55rem',
+                borderRadius: '6px',
+                fontSize: '0.9rem',
               }}
             >
               {threshold.toFixed(2)}
@@ -654,8 +700,8 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
           </label>
 
           {/* Quick Filters */}
-          <div style={{ display: 'flex', gap: '0.75rem', borderLeft: '1px solid var(--border)', paddingLeft: '0.75rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 600, color: '#92400E' }}>
+          <div style={{ display: 'flex', gap: '1rem', borderLeft: '2px solid var(--border)', paddingLeft: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.875rem', cursor: 'pointer', fontWeight: 600, color: '#92400E' }}>
               <input
                 type="checkbox"
                 checked={onlyFlagged}
@@ -664,7 +710,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
               Show flagged only
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 600, color: '#B45309' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.875rem', cursor: 'pointer', fontWeight: 600, color: '#B45309' }}>
               <input
                 type="checkbox"
                 checked={onlyInconsistent}
@@ -676,9 +722,9 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
 
           <button
             type="button"
-            className="btn btn-outline btn-sm"
+            className="btn btn-emerald"
             onClick={handleResetZoom}
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem' }}
+            style={{ fontSize: '0.875rem', padding: '0.4rem 0.95rem', fontWeight: 700 }}
             title="Reset Pan & Zoom"
           >
             🎯 Center View
@@ -687,7 +733,7 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
       </div>
 
       {/* GRAPH CANVAS & SIDE PANEL CONTAINER */}
-      <div style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden', minHeight: '620px', height: 'calc(100vh - 200px)' }}>
+      <div style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden', minHeight: '640px', height: 'calc(100vh - 200px)', background: 'radial-gradient(ellipse at center, #F0FDF4 0%, #FAFCFA 60%, #FFFFFF 100%)' }}>
         {/* Main Canvas Area */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden', cursor: isDraggingRef.current ? 'grabbing' : 'grab' }}>
           {loading && (
@@ -871,47 +917,51 @@ export const AnswerMap = ({ assignmentId, questions = [], onOpenSubmissionDetail
           <div
             style={{
               position: 'absolute',
-              bottom: '1rem',
-              left: '1rem',
-              backgroundColor: 'rgba(255, 255, 255, 0.94)',
-              backdropFilter: 'blur(4px)',
+              bottom: '1.25rem',
+              left: '1.25rem',
+              backgroundColor: 'rgba(255, 255, 255, 0.96)',
+              backdropFilter: 'blur(6px)',
               border: '1px solid var(--border)',
-              borderRadius: '8px',
-              padding: '0.65rem 0.9rem',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              fontSize: '0.75rem',
-              lineHeight: 1.5,
+              borderRadius: '10px',
+              padding: '0.85rem 1.15rem',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+              fontSize: '0.85rem',
+              lineHeight: 1.6,
               zIndex: 5,
               pointerEvents: 'none',
-              maxWidth: '280px',
+              maxWidth: '340px',
             }}
           >
-            <div style={{ fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}>
-              🗺️ Map Legend
+            <div style={{ fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+              🗺️ Map Legend (Emerald Theme)
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#0284C7', display: 'inline-block' }} />
-                <span><strong>Cluster Hub:</strong> Group central node</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.35rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '16px', height: '16px', borderRadius: '50%', background: 'linear-gradient(135deg, #10B981, #047857)', display: 'inline-block', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                <span><strong style={{ color: '#064E3B' }}>Cluster Hub:</strong> Semantic Group Hub</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2.5px solid #D97706', display: 'inline-block' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '15px', height: '15px', borderRadius: '50%', backgroundColor: '#FFFFFF', border: '3px solid #10B981', display: 'inline-block' }} />
+                <span><strong>Student Answer:</strong> Awarded marks</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '15px', height: '15px', borderRadius: '50%', border: '3px solid #D97706', display: 'inline-block' }} />
                 <span><strong>Amber Ring:</strong> Flagged submission</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2.5px solid #DC2626', display: 'inline-block' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '15px', height: '15px', borderRadius: '50%', border: '3px solid #DC2626', display: 'inline-block' }} />
                 <span><strong>Red Ring:</strong> Prompt injection attempt</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2.5px dashed #7C3AED', display: 'inline-block' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '15px', height: '15px', borderRadius: '50%', border: '3px dashed #7C3AED', display: 'inline-block' }} />
                 <span><strong>Dashed Ring:</strong> Needs external verification</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ width: '14px', height: '14px', borderRadius: '50%', backgroundColor: 'rgba(245, 158, 11, 0.45)', border: '1px solid #D97706', display: 'inline-block' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: 'rgba(245, 158, 11, 0.4)', border: '2px solid #D97706', display: 'inline-block' }} />
                 <span><strong>Amber Halo:</strong> Inconsistent marks in group</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#94A3B8', display: 'inline-block' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '13px', height: '13px', borderRadius: '50%', backgroundColor: '#64748B', display: 'inline-block' }} />
                 <span><strong>Isolated Node:</strong> Unusual answer (singleton)</span>
               </div>
             </div>
