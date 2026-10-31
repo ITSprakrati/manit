@@ -675,48 +675,77 @@ export const SubmissionDetailModal = ({ submissionId, onClose, onUpdated }) => {
                   return (
                     <div
                       key={cg.criterion_id}
-                      className="card"
                       style={{
-                        marginBottom: '0.75rem',
+                        marginBottom: '0.85rem',
                         backgroundColor: !cg.covered_by_material ? '#FFFBEB' : '#FFFFFF',
-                        borderColor: !cg.covered_by_material ? '#FCD34D' : 'var(--border)',
+                        border: `1.5px solid ${!cg.covered_by_material ? '#FCD34D' : isOverridden ? '#86EFAC' : '#E2E8F0'}`,
+                        borderLeft: `4px solid ${!cg.covered_by_material ? '#F59E0B' : isOverridden ? '#16A34A' : 'var(--primary)'}`,
+                        borderRadius: '8px',
+                        padding: '0.85rem 1rem',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                       }}
                     >
                       {/* Criterion Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.35rem' }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-main)' }}>
-                          Criterion {cg.order_num}: {cg.criterion_text}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.45rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                          <span
+                            style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              color: 'var(--primary)',
+                              backgroundColor: '#EFF6FF',
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '4px',
+                            }}
+                          >
+                            Criterion {cg.order_num}
+                          </span>
+                          <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#1E293B' }}>
+                            {cg.criterion_text}
+                          </span>
                         </div>
-                        <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--primary)', marginLeft: '0.75rem' }}>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.9rem',
+                            backgroundColor: !cg.covered_by_material ? '#FEF3C7' : '#EFF6FF',
+                            color: !cg.covered_by_material ? '#B45309' : '#1D4ED8',
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '12px',
+                            border: `1px solid ${!cg.covered_by_material ? '#FCD34D' : '#BFDBFE'}`,
+                            marginLeft: '0.75rem',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           {cg.marks_awarded} / {cg.max_marks} pts
                         </span>
                       </div>
 
                       {/* Not Covered in Course Material Alert */}
                       {!cg.covered_by_material ? (
-                        <div style={{ backgroundColor: '#FEF3C7', padding: '0.5rem 0.75rem', borderRadius: '4px', fontSize: '0.8rem', color: '#D97706', marginBottom: '0.5rem' }}>
-                          <strong>⚠️ Not covered in course material:</strong> No guessed marks awarded. Needs teacher decision.
+                        <div style={{ backgroundColor: '#FEF3C7', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem', color: '#B45309', marginBottom: '0.5rem', border: '1px solid #FDE68A' }}>
+                          <strong>⚠️ Not covered in course material:</strong> No guessed marks awarded. Needs teacher review.
                         </div>
                       ) : (
-                        <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
-                          <strong>AI Reason:</strong> {cg.ai_reason}
+                        <div style={{ fontSize: '0.825rem', color: '#475569', marginBottom: '0.4rem', lineHeight: 1.5 }}>
+                          <strong style={{ color: '#334155' }}>AI Reason:</strong> {cg.ai_reason}
                         </div>
                       )}
 
                       {/* CITED Course Chunk with Page Number */}
                       {cg.cited_chunk_id ? (
                         <div style={{
-                          backgroundColor: 'var(--panel-bg)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          padding: '0.4rem 0.6rem',
+                          backgroundColor: '#F8FAFC',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '6px',
+                          padding: '0.45rem 0.65rem',
                           fontSize: '0.775rem',
                           marginBottom: '0.6rem',
                         }}>
-                          <span style={{ fontWeight: 600, color: 'var(--primary)' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                             📄 Cited Course Note (Page {cg.cited_page_num}, Chunk #{cg.cited_chunk_id}):
                           </span>
-                          <p style={{ fontStyle: 'italic', color: 'var(--text-main)', marginTop: '0.2rem' }}>
+                          <p style={{ fontStyle: 'italic', color: '#334155', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
                             "{cg.cited_text}"
                           </p>
                         </div>
@@ -724,8 +753,8 @@ export const SubmissionDetailModal = ({ submissionId, onClose, onUpdated }) => {
 
                       {/* Overrides History if any */}
                       {isOverridden && (
-                        <div style={{ fontSize: '0.75rem', color: '#16A34A', marginBottom: '0.4rem' }}>
-                          ✓ Override saved by teacher
+                        <div style={{ fontSize: '0.75rem', color: '#16A34A', fontWeight: 600, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          ✓ Override saved by instructor
                         </div>
                       )}
 

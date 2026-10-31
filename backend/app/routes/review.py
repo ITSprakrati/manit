@@ -1053,6 +1053,28 @@ def get_question_answer_clusters(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/assignments/{assignment_id}/questions/{question_id}/answer-map")
+def get_question_answer_map(
+    assignment_id: int,
+    question_id: int,
+    threshold: Optional[float] = Query(0.85, ge=0.1, le=0.99),
+    teacher: User = Depends(require_teacher),
+    db: Session = Depends(get_db)
+):
+    """
+    Phase C: Teacher-only Answer Map Graph endpoint.
+    Returns force-directed graph structure:
+    - Nodes: student answers and cluster hub nodes
+    - Edges: hub connections and pairwise similarity links
+    - Flags, ring colors, and inconsistency halos
+    Students calling this get 403 Forbidden.
+    """
+    from backend.app.clustering import generate_answer_map
+    try:
+        return generate_answer_map(question_id, db, threshold=threshold)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/assignments/{assignment_id}/questions/{question_id}/clusters/apply-group-mark")
 def post_apply_group_mark(
     assignment_id: int,

@@ -276,10 +276,10 @@ export const StudentDashboard = () => {
                                 type="button"
                                 className="btn btn-outline btn-sm"
                                 disabled={true}
-                                style={{ backgroundColor: '#F3F4F6', color: '#6B7280', cursor: 'not-allowed' }}
+                                style={{ backgroundColor: '#F1F5F9', color: '#64748B', cursor: 'not-allowed', borderColor: '#CBD5E1' }}
                                 title="Examinations permit exactly one submission attempt. Resubmissions are disabled."
                               >
-                                🔒 Submitted (Single Attempt)
+                                🔒 Submitted (Examination - Locked)
                               </button>
                             ) : (
                               <button
@@ -292,14 +292,37 @@ export const StudentDashboard = () => {
                               </button>
                             )
                           ) : (
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              disabled={isBlocked && !hasSub}
-                              onClick={() => setActiveAssignment(a)}
-                            >
-                              {hasSub ? (inCorrectionWindow ? '✏️ Edit in Window' : 'Resubmit Work') : 'Submit Work'}
-                            </button>
+                            hasSub ? (
+                              inCorrectionWindow ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  style={{ backgroundColor: '#D97706', borderColor: '#B45309' }}
+                                  onClick={() => setActiveAssignment(a)}
+                                >
+                                  ✏️ Edit in Window ({latest?.seconds_remaining || 0}s left)
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  disabled={true}
+                                  style={{ backgroundColor: '#F1F5F9', color: '#64748B', cursor: 'not-allowed', borderColor: '#CBD5E1' }}
+                                  title="Correction window has closed. Your submission is locked and final. Resubmission is disabled."
+                                >
+                                  🔒 Submitted (Final - Locked)
+                                </button>
+                              )
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={isBlocked}
+                                onClick={() => setActiveAssignment(a)}
+                              >
+                                Submit Work
+                              </button>
+                            )
                           )}
                         </>
                       )}

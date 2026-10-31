@@ -393,3 +393,292 @@ def apply_group_mark(
         "skipped_members": skipped_members,
         "message": f"Successfully applied mark {target_mark} to {updated_count} member(s). Skipped {skipped_flagged_count} flagged member(s)."
     }
+
+
+def generate_answer_map(
+    question_id: int,
+    db: Session,
+    threshold: float = 0.85
+) -> Dict[str, Any]:
+    """
+    Phase C: Cluster Graph View ("Answer Map")
+    Constructs a visual, connected graph of how answers group together for a question.
+    - Nodes = student answers (and cluster hub nodes).
+    - Hub nodes = larger central nodes for clusters labelled "Group A (14)".
+    - Edges = connections to hubs and pairwise similarity edges >= threshold (thicker = more similar).
+    - Rings:
+      * Amber ring = flagged
+      * Red ring = injection attempt
+      * Dashed ring = needs external verification (alternative_method)
+      * Amber halo on a hub = inconsistent marks (> 10% band)
+    - Singletons = isolated nodes ("Unusual answers").
+    """
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise ValueError(f"Question {question_id} not found")
+
+    answers = db.query(Answer).join(Answer.submission).filter(
+        Answer.question_id == question_id,
+        Submission.status.in_(["graded", "approved", "published", "submitted"]),
+        Submission.is_planted_check == False
+    ).all()
+
+    if not answers:
+        return {
+            "question_id": question.id,
+            "question_number": question.question_number,
+            "question_text": question.question_text,
+            "max_marks": question.max_marks,
+            "threshold": threshold,
+            "nodes": [],
+            "edges": [],
+            "clusters": [],
+            "total_answers": 0,
+            "singletons_count": 0
+        }
+
+    # Soft blue/slate palette for clusters (light theme)
+    CLUSTER_COLORS = [
+        {"bg": "#E0F2FE", "border": "#0284C7", "hub": "#0284C7", "hub_text": "#FFFFFF"},  # Sky Blue
+        {"bg": "#F1F5F9", "border": "#475569", "hub": "#475569", "hub_text": "#FFFFFF"},  # Slate
+        {"bg": "#E0E7FF", "border": "#4F46E5", "hub": "#4F46E5", "hub_text": "#FFFFFF"},  # Indigo
+        {"bg": "#CCFBF1", "border": "#0D9488", "hub": "#0D9488", "hub_text": "#FFFFFF"},  # Teal
+        {"bg": "#EDE9FE", "border": "#7C3AED", "hub": "#7C3AED", "hub_text": "#FFFFFF"},  # Violet
+        {"bg": "#DCFCE7", "border": "#16A34A", "hub": "#16A34A", "hub_text": "#FFFFFF"},  # Emerald
+        {"bg": "#FEF3C7", "border": "#D97706", "hub": "#D97706", "hub_text": "#FFFFFF"},  # Amber/Bronze
+    ]
+    SINGLETON_COLOR = {"bg": "#F8FAFC", "border": "#94A3B8", "hub": "#94A3B8"}
+
+    texts = [a.student_answer_text for a in answers]
+    vectors = compute_dense_embeddings(texts)
+    sim_matrix = cosine_similarity(vectors)
+
+    # Agglomerative clustering
+    dist_threshold = max(0.01, 1.0 - threshold)
+    dist_matrix = np.clip(1.0 - sim_matrix, 0.0, 1.0)
+    np.fill_diagonal(dist_matrix, 0.0)
+
+    if len(answers) > 1:
+        clustering = AgglomerativeClustering(
+            metric="precomputed",
+            linkage="average",
+            distance_threshold=dist_threshold,
+            n_clusters=None
+        )
+        labels = clustering.fit_predict(dist_matrix)
+    else:
+        labels = np.array([0])
+
+    # Group answers by label
+    clusters_map: Dict[int, List[int]] = {}
+    for idx, lbl in enumerate(labels):
+        clusters_map.setdefault(int(lbl), []).append(idx)
+
+    nodes = []
+    edges = []
+    clusters_summary = []
+    singletons = []
+
+    group_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    group_counter = 0
+    inconsistency_threshold = round(question.max_marks * INCONSISTENCY_BAND_PERCENT, 2)
+
+    # First pass: identify real clusters (size >= 2) and singletons (size < 2)
+    cluster_meta = {}
+    for lbl, idx_list in clusters_map.items():
+        if len(idx_list) >= MIN_CLUSTER_SIZE:
+            g_letter = group_letters[group_counter % len(group_letters)]
+            g_id = f"Group {g_letter}"
+            palette = CLUSTER_COLORS[group_counter % len(CLUSTER_COLORS)]
+            group_counter += 1
+
+            # Medoid
+            sub_sim = sim_matrix[np.ix_(idx_list, idx_list)]
+            medoid_local_idx = int(np.argmax(sub_sim.mean(axis=1)))
+            medoid_global_idx = idx_list[medoid_local_idx]
+
+            # Inconsistency
+            cluster_marks = []
+            for i in idx_list:
+                ans = answers[i]
+                q_mark = sum(g.marks_awarded for g in ans.grade_runs[0].grades) if ans.grade_runs else 0.0
+                cluster_marks.append(round(q_mark, 1))
+
+            max_m = max(cluster_marks) if cluster_marks else 0.0
+            min_m = min(cluster_marks) if cluster_marks else 0.0
+            diff = round(max_m - min_m, 1)
+            is_inconsistent = diff > inconsistency_threshold
+            median_m = float(np.median(cluster_marks)) if cluster_marks else 0.0
+
+            outlier_indices = []
+            if is_inconsistent:
+                for idx_pos, m_val in enumerate(cluster_marks):
+                    if abs(m_val - median_m) > (inconsistency_threshold * 0.5):
+                        outlier_indices.append(idx_list[idx_pos])
+
+            cluster_meta[lbl] = {
+                "group_id": g_id,
+                "count": len(idx_list),
+                "palette": palette,
+                "medoid_idx": medoid_global_idx,
+                "is_inconsistent": is_inconsistent,
+                "diff": diff,
+                "median": median_m,
+                "outlier_indices": set(outlier_indices),
+                "member_indices": idx_list
+            }
+
+            # Create Hub Node for this cluster
+            hub_node = {
+                "id": f"hub_{g_letter}",
+                "node_type": "hub",
+                "label": f"{g_id} ({len(idx_list)})",
+                "cluster_id": g_id,
+                "count": len(idx_list),
+                "radius": 24,
+                "color": palette["hub"],
+                "textColor": palette["hub_text"],
+                "has_halo": is_inconsistent,
+                "halo_color": "#F59E0B" if is_inconsistent else None,
+                "inconsistency_warning": "Inconsistent marks inside this group" if is_inconsistent else None,
+                "inconsistency_diff": diff if is_inconsistent else 0.0,
+                "is_inconsistent": is_inconsistent,
+                "members_count": len(idx_list)
+            }
+            nodes.append(hub_node)
+        else:
+            # Singleton / isolated
+            cluster_meta[lbl] = None
+
+    # Second pass: create answer nodes and edges
+    for idx, ans in enumerate(answers):
+        sub = ans.submission
+        q_mark = sum(g.marks_awarded for g in ans.grade_runs[0].grades) if ans.grade_runs else 0.0
+        q_mark = round(q_mark, 1)
+
+        # Flags & risk status
+        unresolved_flags = [f for f in sub.flags if not f.resolved and (f.answer_id == ans.id or f.answer_id is None)]
+        has_flags = len(unresolved_flags) > 0
+        is_injection = ans.injection_detected or any(f.flag_type == "injection_attempt" for f in unresolved_flags)
+        is_alt_method = any(f.flag_type == "alternative_method" for f in unresolved_flags) or bool(ans.external_verification)
+
+        c_info = cluster_meta.get(int(labels[idx]))
+        if c_info:
+            g_id = c_info["group_id"]
+            palette = c_info["palette"]
+            is_singleton = False
+            is_medoid = (idx == c_info["medoid_idx"])
+            is_outlier = idx in c_info["outlier_indices"]
+            similarity_to_medoid = round(float(sim_matrix[idx, c_info["medoid_idx"]]), 3)
+            node_color = palette["bg"]
+            border_color = palette["border"]
+        else:
+            g_id = None
+            is_singleton = True
+            is_medoid = False
+            is_outlier = True  # Isolated / unusual answer
+            similarity_to_medoid = 0.0
+            node_color = SINGLETON_COLOR["bg"]
+            border_color = SINGLETON_COLOR["border"]
+
+        # Ring styling per spec:
+        # Red ring = injection attempt
+        # Amber ring = flagged
+        # Dashed ring = needs external verification
+        ring_color = None
+        ring_style = "solid"
+        if is_injection:
+            ring_color = "#DC2626"  # Red ring
+        elif is_alt_method:
+            ring_color = "#7C3AED"  # Purple ring
+            ring_style = "dashed"   # Dashed ring for external verification
+        elif has_flags:
+            ring_color = "#D97706"  # Amber ring
+
+        flags_serialized = [
+            {"id": f.id, "type": f.flag_type, "reason": f.reason, "severity": f.severity}
+            for f in unresolved_flags
+        ]
+
+        ans_node = {
+            "id": f"ans_{ans.id}",
+            "node_type": "answer",
+            "answer_id": ans.id,
+            "submission_id": sub.id,
+            "student_id": sub.student_id,
+            "student_name": sub.student.full_name,
+            "student_email": sub.student.email,
+            "answer_text": ans.student_answer_text,
+            "current_mark": q_mark,
+            "max_marks": question.max_marks,
+            "cluster_id": g_id,
+            "is_singleton": is_singleton,
+            "is_medoid": is_medoid,
+            "is_outlier": is_outlier,
+            "has_flags": has_flags,
+            "is_injection": is_injection,
+            "is_alt_method": is_alt_method,
+            "ring_color": ring_color,
+            "ring_style": ring_style,
+            "color": node_color,
+            "border_color": border_color,
+            "radius": 14 if is_medoid else 11,
+            "similarity_to_medoid": similarity_to_medoid,
+            "flags": flags_serialized
+        }
+        nodes.append(ans_node)
+
+        # Connect to cluster Hub
+        if g_id:
+            hub_id = f"hub_{g_id.replace('Group ', '')}"
+            edges.append({
+                "source": hub_id,
+                "target": f"ans_{ans.id}",
+                "edge_type": "hub_connection",
+                "similarity": similarity_to_medoid,
+                "weight": 1.0,
+                "color": border_color,
+                "dash": [2, 2]
+            })
+
+    # Third pass: Pairwise similarity edges above threshold
+    for i in range(len(answers)):
+        for j in range(i + 1, len(answers)):
+            s_val = float(sim_matrix[i, j])
+            if s_val >= threshold:
+                # Thickness scales with similarity above threshold
+                thickness = max(1.0, min(5.0, (s_val - threshold) / max(0.01, 1.0 - threshold) * 4.0 + 1.0))
+                edges.append({
+                    "source": f"ans_{answers[i].id}",
+                    "target": f"ans_{answers[j].id}",
+                    "edge_type": "similarity",
+                    "similarity": round(s_val, 3),
+                    "thickness": round(thickness, 1),
+                    "color": "#94A3B8"
+                })
+
+    # Clusters summary for filters / apply-to-group
+    for lbl, c_info in cluster_meta.items():
+        if c_info:
+            clusters_summary.append({
+                "group_id": c_info["group_id"],
+                "count": c_info["count"],
+                "is_inconsistent": c_info["is_inconsistent"],
+                "difference": c_info["diff"],
+                "median_mark": c_info["median"],
+                "palette": c_info["palette"],
+                "member_answer_ids": [answers[i].id for i in c_info["member_indices"]]
+            })
+
+    return {
+        "question_id": question.id,
+        "question_number": question.question_number,
+        "question_text": question.question_text,
+        "max_marks": question.max_marks,
+        "threshold": threshold,
+        "total_answers": len(answers),
+        "singletons_count": len([n for n in nodes if n.get("is_singleton")]),
+        "nodes": nodes,
+        "edges": edges,
+        "clusters": clusters_summary
+    }

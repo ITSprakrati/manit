@@ -59,17 +59,27 @@ async def prepare_and_split_submission(
     if not assignment or assignment.status != "published":
         raise HTTPException(status_code=404, detail="Published assignment not found")
 
-    # Examination rule: only one submission allowed, no resubmission!
-    if assignment.kind == "examination":
-        existing = db.query(Submission).filter(
-            Submission.assignment_id == assignment.id,
-            Submission.student_id == student.id,
-            Submission.is_planted_check == False
-        ).first()
-        if existing:
+    # Check if student already submitted (No resubmission for exams or after correction window closes)
+    existing_sub = db.query(Submission).filter(
+        Submission.assignment_id == assignment.id,
+        Submission.student_id == student.id,
+        Submission.is_planted_check == False
+    ).order_by(Submission.id.desc()).first()
+
+    if existing_sub:
+        if assignment.kind == "examination":
             raise HTTPException(
                 status_code=400,
                 detail="This is an Examination. Only one submission is permitted and resubmission is disabled."
+            )
+        is_window_active = False
+        if existing_sub.correction_window_until and not existing_sub.window_locked:
+            if datetime.utcnow() < existing_sub.correction_window_until:
+                is_window_active = True
+        if not is_window_active:
+            raise HTTPException(
+                status_code=400,
+                detail="The correction window has closed. Your submission is final and resubmission is disabled."
             )
 
     questions = db.query(Question).filter(Question.assignment_id == assignment.id).order_by(Question.question_number.asc()).all()
@@ -212,16 +222,28 @@ def confirm_submission(
         raise HTTPException(status_code=404, detail="Published assignment not found")
 
     is_exam = (assignment.kind == "examination")
-    if is_exam:
-        existing = db.query(Submission).filter(
-            Submission.assignment_id == assignment.id,
-            Submission.student_id == student.id,
-            Submission.is_planted_check == False
-        ).first()
-        if existing:
+
+    # Check if student already submitted (No resubmission for exams or after correction window closes)
+    existing_sub = db.query(Submission).filter(
+        Submission.assignment_id == assignment.id,
+        Submission.student_id == student.id,
+        Submission.is_planted_check == False
+    ).order_by(Submission.id.desc()).first()
+
+    if existing_sub:
+        if is_exam:
             raise HTTPException(
                 status_code=400,
                 detail="This is an Examination. Only one submission is permitted and resubmission is disabled."
+            )
+        is_window_active = False
+        if existing_sub.correction_window_until and not existing_sub.window_locked:
+            if datetime.utcnow() < existing_sub.correction_window_until:
+                is_window_active = True
+        if not is_window_active:
+            raise HTTPException(
+                status_code=400,
+                detail="The correction window has closed. Your submission is final and resubmission is disabled."
             )
 
     now = datetime.utcnow()

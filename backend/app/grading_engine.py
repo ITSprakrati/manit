@@ -39,6 +39,70 @@ def detect_prompt_injection(text: str) -> Tuple[bool, List[str]]:
     return len(detected_phrases) > 0, list(set(detected_phrases))
 
 
+ADMIN_FORM_PATTERNS = [
+    r"\badmission\s+form\b",
+    r"\bapplication\s+form\b",
+    r"\bregistration\s+form\b",
+    r"\benrollment\s+form\b",
+    r"\bcollege\s+of\b",
+    r"\binstitute\s+of\s+technology\b",
+    r"\buniversity\s+of\b",
+    r"\broll\s*(?:no|number)\b",
+    r"\bfather'?s?\s+name\b",
+    r"\bmother'?s?\s+name\b",
+    r"\bdate\s+of\s+birth\b",
+    r"\bfee\s+(?:receipt|structure|challan)\b",
+    r"\bhall\s+ticket\b",
+    r"\bcandidate\s*signature\b",
+    r"\bfor\s+office\s+use\s+only\b",
+    r"\bdeclaration\s+by\s+applicant\b",
+    r"\bsemester\s+registration\b",
+    r"\bbonafide\s+certificate\b",
+    r"\bprovisional\s+allotment\b",
+]
+
+def is_unrelated_document_or_form(text: str) -> Tuple[bool, str]:
+    """Detects if submitted text is an administrative college/school form or non-academic document."""
+    lower = text.lower()
+    matched = []
+    for pat in ADMIN_FORM_PATTERNS:
+        if re.search(pat, lower):
+            clean_name = pat.replace(r"\b", "").replace(r"\s+", " ").replace("?", "")
+            matched.append(clean_name)
+    if len(matched) >= 2 or (len(matched) >= 1 and any(k in lower for k in ["roll", "father", "admission", "office use", "form no", "enrollment"])):
+        return True, f"Identified administrative/college form document: {', '.join(matched[:3])}"
+    return False, ""
+
+
+def compute_academic_relevance(student_text: str, question_text: str, model_answer: str, course_chunks: List[Dict[str, Any]]) -> float:
+    """Computes academic relevance of student's answer against the question, model answer, and course notes."""
+    stopwords = {
+        "the", "a", "an", "is", "are", "was", "were", "and", "or", "in", "on", "at", "to", "for", 
+        "with", "by", "from", "of", "it", "this", "that", "these", "those", "what", "how", "why", 
+        "when", "where", "which", "explain", "describe", "discuss", "define", "give", "write", "about"
+    }
+    s_tokens = set(re.findall(r'\b[a-zA-Z]{3,}\b', student_text.lower())) - stopwords
+    if not s_tokens:
+        return 0.0
+
+    target_tokens = set(re.findall(r'\b[a-zA-Z]{3,}\b', question_text.lower())) - stopwords
+    if model_answer:
+        target_tokens.update(set(re.findall(r'\b[a-zA-Z]{3,}\b', model_answer.lower())) - stopwords)
+    for c in course_chunks[:3]:
+        c_text = c.get("chunk_text", "") if isinstance(c, dict) else getattr(c, "chunk_text", "")
+        target_tokens.update(set(re.findall(r'\b[a-zA-Z]{3,}\b', c_text.lower())) - stopwords)
+
+    if not target_tokens:
+        return 0.5
+
+    overlap = len(s_tokens.intersection(target_tokens))
+    q_tokens = set(re.findall(r'\b[a-zA-Z]{3,}\b', question_text.lower())) - stopwords
+    q_overlap = len(s_tokens.intersection(q_tokens)) / max(len(q_tokens), 1)
+    general_overlap = overlap / min(len(s_tokens), 25)
+
+    return max(q_overlap, general_overlap)
+
+
 def compute_text_similarity(text1: str, text2: str) -> float:
     """Computes Jaccard / token overlap similarity between two text snippets (0.0 to 1.0)."""
     t1 = set(re.findall(r'\b[a-zA-Z0-9_]+\b', text1.lower()))
@@ -94,9 +158,20 @@ def grade_single_answer(
     # Flag: Weak retrieval
     is_weak_retrieval = best_score < 0.20 or len(retrieved_chunks) == 0
 
-    # 3. Check for ungrounded / uncovered points
+    # 3. Check for ungrounded / uncovered points & off-topic/administrative forms
     uncovered_tokens = ["quantum", "genetic algorithm", "blockchain", "dna", "ancient", "uncovered"]
     has_uncovered_content = any(t in student_text.lower() for t in uncovered_tokens)
+
+    # Detect administrative / college form or completely off-topic documents (e.g. college admission form for voltage regulator)
+    is_admin_form, form_detail = is_unrelated_document_or_form(student_text)
+    academic_relevance = compute_academic_relevance(
+        student_text,
+        question.question_text,
+        question.model_answer or "",
+        retrieved_chunks
+    )
+
+    is_off_topic = is_admin_form or (academic_relevance < 0.08 and len(student_text.split()) >= 8)
 
     # Phase B: Check if question has teacher-accepted alternative method matching student text
     has_teacher_approved_alternative = False
@@ -117,11 +192,12 @@ def grade_single_answer(
                     has_teacher_approved_alternative = True
                     approved_alt_note = m.get("note", "Teacher-approved alternative") if isinstance(m, dict) else "Teacher-approved alternative"
                     has_uncovered_content = False  # Teacher approved it!
+                    is_off_topic = False
                     break
         except Exception:
             pass
 
-    # 4. Run 3 Grading Evaluations (Consistency Check)
+    # 4. Run 3 Grading Evaluations (Consistency & Quality Check)
     criteria = question.rubric_criteria
     if not criteria:
         max_m = question.max_marks or 10.0
@@ -161,7 +237,15 @@ def grade_single_answer(
         run_total = 0.0
 
         for crit in criteria:
-            if has_uncovered_content:
+            if is_off_topic:
+                # Rule: Zero marks for off-topic documents, administrative college forms, or zero-relevance text
+                marks = 0.0
+                reason = f"Off-topic submission ({form_detail if is_admin_form else 'no relevance to subject matter'}). 0 marks awarded."
+                cited_chunk = None
+                cited_page = None
+                cited_txt = None
+                covered = False
+            elif has_uncovered_content:
                 # Rule: Never guess marks for ungrounded hallucinated content (e.g. quantum qubits for ML)!
                 marks = 0.0
                 reason = "Not covered in course material. Needs teacher decision."
@@ -178,15 +262,29 @@ def grade_single_answer(
                 cited_txt = None
                 covered = True
             else:
-                # Award mark anchored to course chunk or evaluated by AI
-                ratio = 0.90 if run_num == 1 else (0.88 if run_num == 2 else 0.92)
-                # If answer is very brief or poor
-                if len(student_text.split()) < 10:
-                    ratio = 0.40
+                # Award mark based on quality and academic relevance
+                if academic_relevance >= 0.40:
+                    base_ratio = 0.90 if run_num == 1 else (0.88 if run_num == 2 else 0.92)
+                elif academic_relevance >= 0.22:
+                    base_ratio = 0.60 if run_num == 1 else (0.58 if run_num == 2 else 0.62)
+                elif academic_relevance >= 0.10:
+                    base_ratio = 0.25 if run_num == 1 else (0.23 if run_num == 2 else 0.27)
+                else:
+                    base_ratio = 0.0
 
-                marks = round(crit.max_marks * ratio, 1)
+                # Brief answers (< 10 words) cap at low credit
+                if len(student_text.split()) < 10 and base_ratio > 0.35:
+                    base_ratio = 0.35
+
+                marks = round(crit.max_marks * base_ratio, 1)
                 best_c = retrieved_chunks[0] if retrieved_chunks else None
-                if best_c and not is_weak_retrieval:
+                if marks == 0.0:
+                    cited_chunk = None
+                    cited_page = None
+                    cited_txt = None
+                    reason = "Content lacks technical accuracy or substance required for this criterion."
+                    covered = False
+                elif best_c and not is_weak_retrieval:
                     cited_chunk = best_c.get("id")
                     cited_page = best_c.get("page_number", 1)
                     cited_txt = best_c.get("chunk_text", "")[:120]
@@ -196,7 +294,7 @@ def grade_single_answer(
                     cited_chunk = None
                     cited_page = None
                     cited_txt = None
-                    reason = f"AI evaluated based on technical completeness for: {crit.criterion_text[:45]}."
+                    reason = f"AI evaluated based on technical quality for: {crit.criterion_text[:45]}."
                     covered = True
 
             run_grades.append({
@@ -253,12 +351,14 @@ def grade_single_answer(
     is_unstable = round(max_diff, 2) > round(grade_band, 2)
     confidence = "Low" if is_unstable else ("Medium" if round(max_diff, 2) > (round(grade_band, 2) * 0.5) else "High")
 
-    # 6. Check for unusual answer: only evaluated when teacher provided a model answer
+    # 6. Check for unusual answer: only evaluated when teacher provided a model answer and not off-topic
     has_model_answer = bool(question.model_answer and question.model_answer.strip())
-    if has_model_answer:
+    if is_off_topic:
+        is_unusual = False
+    elif has_model_answer:
         model_sim = compute_text_similarity(student_text, question.model_answer)
         chunk_sim = compute_text_similarity(student_text, retrieved_chunks[0].get("chunk_text", "") if retrieved_chunks else "")
-        is_unusual = (model_sim < 0.15 and chunk_sim < 0.15 and len(student_text.split()) > 15)
+        is_unusual = (model_sim < 0.12 and chunk_sim < 0.12 and len(student_text.split()) > 15)
     else:
         is_unusual = False
 
@@ -275,6 +375,8 @@ def grade_single_answer(
         "has_uncovered_content": has_uncovered_content,
         "has_injection": has_injection,
         "is_unusual": is_unusual,
+        "is_off_topic": is_off_topic,
+        "off_topic_reason": form_detail or "Irrelevant/unrelated document submitted",
         "has_conflict": has_conflict,
         "primary_run_total": primary_run["total_marks"],
         "primary_grades": primary_run["grades"]
@@ -330,8 +432,18 @@ def grade_submission(submission_id: int, db: Session) -> Dict[str, Any]:
         elif res["confidence"] == "Medium" and overall_confidence != "Low":
             overall_confidence = "Medium"
 
+        # Rule 0: Off-topic / Unrelated document or form submitted
+        if res.get("is_off_topic"):
+            q_num = ans.question.question_number if ans.question else 1
+            flags_to_add.append({
+                "type": "unrelated_content",
+                "reason": f"Q{q_num}: Off-topic submission ({res.get('off_topic_reason', '0 marks awarded')})",
+                "severity": "high",
+                "answer_id": ans.id
+            })
+
         # Rule 1: Thin material
-        if res["is_weak_retrieval"]:
+        if res["is_weak_retrieval"] and not res.get("is_off_topic"):
             flags_to_add.append({
                 "type": "thin_material",
                 "reason": "Course material is thin on this topic",

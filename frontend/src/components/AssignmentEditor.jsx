@@ -687,17 +687,54 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
                 />
               </div>
 
-              {/* Rubric Criteria Table */}
-              <div style={{ backgroundColor: 'var(--panel-bg)', borderRadius: '6px', padding: '0.75rem', border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                    Grading Criteria ({q.criteria?.length || 0})
-                  </span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+              {/* Rubric Criteria Table (Modern Marking Scheme UI) */}
+              <div
+                style={{
+                  backgroundColor: '#F8FAFC',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  border: '1.5px solid #E2E8F0',
+                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '0.75rem',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                    borderBottom: '1px solid #E2E8F0',
+                    paddingBottom: '0.6rem',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      📋 Marking Scheme & Rubric
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '12px',
+                        backgroundColor: isSumValid ? '#DCFCE7' : '#FEF3C7',
+                        color: isSumValid ? '#15803D' : '#B45309',
+                        border: `1px solid ${isSumValid ? '#86EFAC' : '#FCD34D'}`,
+                      }}
+                    >
+                      {isSumValid
+                        ? `✓ Total: ${criteriaSum.toFixed(1)} / ${q.max_marks} pts`
+                        : `⚠️ Total: ${criteriaSum.toFixed(1)} / ${q.max_marks} pts (${Math.abs(q.max_marks - criteriaSum).toFixed(1)} pts ${criteriaSum < q.max_marks ? 'unallocated' : 'excess'})`}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
+                      style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                       onClick={() => addCriterion(qIdx)}
                     >
                       + Add Criterion
@@ -706,54 +743,113 @@ export const AssignmentEditor = ({ courseId, initialAssignment = null, onSaved, 
                       <button
                         type="button"
                         className="btn btn-outline btn-sm"
-                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                        style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem', borderColor: 'var(--primary)', color: 'var(--primary)' }}
                         onClick={() => addStandardCriteria(qIdx)}
                       >
                         + 3-Part Rubric
                       </button>
                     )}
+                    {q.criteria && q.criteria.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', color: '#475569' }}
+                        title="Distribute question max marks equally across all criteria"
+                        onClick={() => {
+                          const n = q.criteria.length;
+                          if (n === 0) return;
+                          const splitVal = Math.floor((q.max_marks / n) * 10) / 10;
+                          const remainder = Math.round((q.max_marks - splitVal * n) * 10) / 10;
+                          const updatedCrits = q.criteria.map((c, i) => ({
+                            ...c,
+                            max_marks: i === 0 ? Math.round((splitVal + remainder) * 10) / 10 : splitVal,
+                          }));
+                          updateQuestion(qIdx, 'criteria', updatedCrits);
+                        }}
+                      >
+                        ⚖️ Equal Split
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {q.criteria?.length === 0 && (
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    No criteria defined yet. Click <strong>"+ Add Criterion"</strong> or <strong>"+ 3-Part Rubric"</strong> above to specify.
-                  </p>
+                {(!q.criteria || q.criteria.length === 0) && (
+                  <div style={{ padding: '1rem', textAlign: 'center', backgroundColor: '#FFFFFF', borderRadius: '6px', border: '1px dashed #CBD5E1' }}>
+                    <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', margin: 0 }}>
+                      No criteria defined yet. Click <strong>"+ Add Criterion"</strong> or <strong>"+ 3-Part Rubric"</strong> to configure scoring rules.
+                    </p>
+                  </div>
                 )}
 
-                {q.criteria?.map((crit, cIdx) => (
-                  <div key={cIdx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.4rem' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', width: '20px' }}>
-                      {cIdx + 1}.
-                    </span>
-                    <input
-                      type="text"
-                      className="form-control"
-                      style={{ flex: 1, padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
-                      value={crit.criterion_text}
-                      onChange={(e) => updateCriterion(qIdx, cIdx, 'criterion_text', e.target.value)}
-                      placeholder="Criterion description..."
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <input
-                        type="number"
-                        step="0.5"
-                        style={{ width: '60px', padding: '0.35rem', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '0.85rem' }}
-                        value={crit.max_marks}
-                        onChange={(e) => updateCriterion(qIdx, cIdx, 'max_marks', parseFloat(e.target.value) || 0)}
-                      />
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>pts</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', color: '#DC2626' }}
-                      onClick={() => removeCriterion(qIdx, cIdx)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {q.criteria?.map((crit, cIdx) => (
+                    <div
+                      key={cIdx}
+                      style={{
+                        display: 'flex',
+                        gap: '0.6rem',
+                        alignItems: 'center',
+                        backgroundColor: '#FFFFFF',
+                        padding: '0.55rem 0.75rem',
+                        borderRadius: '6px',
+                        border: '1px solid #E2E8F0',
+                        borderLeft: '3.5px solid var(--primary)',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                      }}
                     >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          color: 'var(--primary)',
+                          backgroundColor: '#EFF6FF',
+                          padding: '0.2rem 0.45rem',
+                          borderRadius: '4px',
+                          minWidth: '28px',
+                          textAlign: 'center',
+                        }}
+                      >
+                        C{cIdx + 1}
+                      </span>
+                      <input
+                        type="text"
+                        className="form-control"
+                        style={{ flex: 1, padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                        value={crit.criterion_text}
+                        onChange={(e) => updateCriterion(qIdx, cIdx, 'criterion_text', e.target.value)}
+                        placeholder="e.g. Definition of core concepts, accuracy of formula, intermediate derivation..."
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', backgroundColor: '#F8FAFC', padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #E2E8F0' }}>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          style={{
+                            width: '55px',
+                            padding: '0.25rem 0.35rem',
+                            border: '1px solid #CBD5E1',
+                            borderRadius: '4px',
+                            fontSize: '0.85rem',
+                            fontWeight: 700,
+                            textAlign: 'center',
+                          }}
+                          value={crit.max_marks}
+                          onChange={(e) => updateCriterion(qIdx, cIdx, 'max_marks', parseFloat(e.target.value) || 0)}
+                        />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>pts</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ padding: '0.2rem 0.45rem', fontSize: '0.75rem', color: '#DC2626', borderColor: '#FECACA' }}
+                        title="Remove criterion"
+                        onClick={() => removeCriterion(qIdx, cIdx)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           );

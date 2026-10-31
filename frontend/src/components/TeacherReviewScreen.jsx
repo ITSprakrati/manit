@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useAIStatus } from '../context/AIStatusContext';
 import { SubmissionDetailModal } from './SubmissionDetailModal';
+import { AnswerMap } from './AnswerMap';
 
 export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
   const { apiFetch } = useAuth();
@@ -536,6 +537,31 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
           </span>
         </button>
 
+        {/* Phase C: Answer Map (Graph View) */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('answermap')}
+          style={{
+            padding: '0.65rem 1.25rem',
+            fontWeight: 700,
+            fontSize: '0.95rem',
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'answermap' ? '3px solid var(--primary)' : '3px solid transparent',
+            color: activeTab === 'answermap' ? 'var(--primary)' : 'var(--text-muted)',
+            marginBottom: '-2px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+          }}
+        >
+          <span>🗺️ Answer Map</span>
+          <span style={{ fontSize: '0.75rem', backgroundColor: '#EFF6FF', color: '#1D4ED8', padding: '0.15rem 0.45rem', borderRadius: '4px', fontWeight: 600 }}>
+            Graph View
+          </span>
+        </button>
+
         {/* Phase 3: Automation #5 Tab with Badge */}
         <button
           type="button"
@@ -734,36 +760,55 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
                             ⚖️ Teacher corrected text
                           </span>
                         )}
-                        {sub.flags.map((f) => {
-                          if (f.type === 'alternative_method') {
+                        {(() => {
+                          // Group flags cleanly to avoid repeating identical warning boxes
+                          const map = new Map();
+                          (sub.flags || []).forEach((f) => {
+                            const cleanReason = f.reason.replace(/^Q\d+:\s*/, '');
+                            const key = `${f.type}_${f.severity}_${cleanReason}`;
+                            if (!map.has(key)) {
+                              map.set(key, { ...f, cleanReason, count: 1, qNums: [] });
+                            } else {
+                              map.get(key).count += 1;
+                            }
+                            const qMatch = f.reason.match(/^Q(\d+):/);
+                            if (qMatch) {
+                              map.get(key).qNums.push(`Q${qMatch[1]}`);
+                            }
+                          });
+
+                          return Array.from(map.values()).map((gf, idx) => {
+                            const qLabel = gf.qNums.length > 0 ? ` (${gf.qNums.join(', ')})` : (gf.count > 1 ? ` (${gf.count}×)` : '');
+                            if (gf.type === 'alternative_method') {
+                              return (
+                                <span
+                                  key={idx}
+                                  className="badge"
+                                  style={{
+                                    padding: '0.2rem 0.5rem',
+                                    borderRadius: '4px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    backgroundColor: '#EEF2FF',
+                                    color: '#4338CA',
+                                    border: '1px solid #C7D2FE',
+                                  }}
+                                >
+                                  🔬 {gf.cleanReason}{qLabel}
+                                </span>
+                              );
+                            }
                             return (
                               <span
-                                key={f.id}
-                                className="badge"
-                                style={{
-                                  padding: '0.2rem 0.5rem',
-                                  borderRadius: '4px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  backgroundColor: '#EEF2FF',
-                                  color: '#4338CA',
-                                  border: '1px solid #C7D2FE',
-                                }}
+                                key={idx}
+                                className={gf.severity === 'high' ? 'badge-error' : 'badge-flagged'}
+                                style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}
                               >
-                                🔬 {f.reason}
+                                ⚠️ {gf.cleanReason}{qLabel}
                               </span>
                             );
-                          }
-                          return (
-                            <span
-                              key={f.id}
-                              className={f.severity === 'high' ? 'badge-error' : 'badge-flagged'}
-                              style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}
-                            >
-                              ⚠️ {f.reason}
-                            </span>
-                          );
-                        })}
+                          });
+                        })()}
                       </div>
                     </div>
 
@@ -1197,6 +1242,17 @@ export const TeacherReviewScreen = ({ assignmentId, onBack }) => {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* PHASE C: ANSWER MAP (FORCE-DIRECTED CLUSTER GRAPH VIEW) */}
+      {activeTab === 'answermap' && (
+        <div style={{ height: '680px', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#FFFFFF', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+          <AnswerMap
+            assignmentId={assignmentId}
+            questions={assignmentQuestions}
+            onOpenSubmissionDetail={(subId) => setSelectedSubId(subId)}
+          />
         </div>
       )}
 
